@@ -1,0 +1,17 @@
+php
+php-curl
+php-gd
+php-mbstring
+php-xml
+php-gettext
+php-mysql
+php-ssh2
+php-text-password
+php-json
+php-imap
+php-zip
+php-xml 
+php-cgi
+php-cli
+php-common
+libapache2-mod-php

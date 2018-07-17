@@ -1,0 +1,2 @@
+sudo ifconfig
+sudo iftop -i eth0

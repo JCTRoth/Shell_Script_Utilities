@@ -1,0 +1,20 @@
+
+## /etc/apt/sources.list 
+
+## /etc/apt/sources.list.d/atareao-telegram-xenial.list 
+deb http://ppa.launchpad.net/atareao/telegram/ubuntu xenial main
+deb-src http://ppa.launchpad.net/atareao/telegram/ubuntu xenial main
+
+## /etc/apt/sources.list.d/google-chrome.list 
+deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main
+
+## /etc/apt/sources.list.d/official-package-repositories.list 
+deb http://mint.5zs.de sarah main upstream import backport 
+deb http://ftp-stud.hs-esslingen.de/ubuntu xenial main restricted universe multiverse
+deb http://ftp-stud.hs-esslingen.de/ubuntu xenial-updates main restricted universe multiverse
+deb http://ftp-stud.hs-esslingen.de/ubuntu xenial-backports main restricted universe multiverse
+deb http://security.ubuntu.com/ubuntu/ xenial-security main restricted universe multiverse
+deb http://archive.canonical.com/ubuntu/ xenial partner
+
+## /etc/apt/sources.list.d/opera-stable.list 
+deb https://deb.opera.com/opera-stable/ stable non-free #Opera Browser (final releases)
