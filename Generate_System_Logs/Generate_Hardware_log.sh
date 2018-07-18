@@ -1,8 +1,6 @@
 #!/bin/bash
 
-sudo apt-get install discus
-
-DATE=$(date +"%d-%m-%Y")
+sudo apt-get install inxi
 
 name=$(sudo hostname)"_"$DATE".txt"
 
@@ -12,18 +10,9 @@ lsb_release -i -c >> $name
 echo "Kernel:" $(uname --kernel-version) >> $name
 
 echo '\\\\\\' >> $name
-sudo lshw -businfo >> $name
 
+inxi -Fxzd >> $name
 
 echo '\\\\\\' >> $name
-echo 'USB Ports' >> $name
 echo '\\\\\\' >> $name
-lsusb 
-
-
-echo '      ' >> $name
-echo '\\\\\\' >> $name
-echo 'Disk Usage' >> $name
-echo '\\\\\\' >> $name
-discus >> $name
 

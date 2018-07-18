@@ -1,1 +1,1 @@
-mysqldump -u root -p wheelscout > FileName_addSomeDate.sql
+mysqldump -u root -p xxNamexx > FileName_addSomeDate.sql
