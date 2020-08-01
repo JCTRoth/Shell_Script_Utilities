@@ -20,7 +20,7 @@ fi
 
 # Case: Empty Name
 if [ -z $name ]; then
-name="Nobody"; # User Selected Cancle
+name="Nobody"; # User klicked Ok without input
 fi
 
 # List Directory Selector - text
