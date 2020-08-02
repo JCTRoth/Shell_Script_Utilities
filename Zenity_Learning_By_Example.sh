@@ -8,7 +8,7 @@ exec 2>/dev/null # Uncomment for debugging
 
 # Window Size
 h=100 # height
-w=300 # height
+w=300 # width
 
 # Question Box
 if $(`zenity --height $h --width 200 --question --title "Question Box" --text "Start the tour?"`); then
@@ -19,7 +19,7 @@ fi
 
 # Entry Text Selector  - No Input End Program
 if ! name=`zenity --height $h --width $w --title  "Your Name" --entry --text "Whats your name?"`; then
-	name="Ash Ketchum"; # User Selected Cancle
+	name="Ash Ketchum"; # User Selected Cancel
 fi
 
 # Case: Empty Name
