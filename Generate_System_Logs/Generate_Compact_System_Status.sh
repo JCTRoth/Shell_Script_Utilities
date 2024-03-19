@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Define the output file name with timestamp
-output_file="output_$(date +%Y%m%d_%H%M%S).txt"
+output_file="system_report_$(date +%Y%m%d_%H%M%S).txt"
 
 {
     echo "--------------------------------------------------"
@@ -13,8 +13,37 @@ output_file="output_$(date +%Y%m%d_%H%M%S).txt"
     echo "Uptime: $(uptime)"
     echo "CPU: $(grep -m 1 'model name' /proc/cpuinfo | awk -F: '{print $2}')"
     echo "$(free -h)"
-    echo "Network: $(ip a | awk '/inet / {print $2}')"
+    echo "Network Interfaces:"
     echo ""
+    nmcli device status
+    echo ""
+    echo "Nearby Wireless Networks:"
+    echo ""
+    nmcli device wifi list
+    echo "--------------------------------------------------"
+    echo ""
+    echo "Users with Roles:"
+    echo ""
+    getent passwd | while IFS=: read -r username _ uid gid _ home shell; do
+        groups=$(id -Gn "$username")
+        echo "Username: $username"
+        echo "UID: $uid"
+        echo "GID: $gid"
+        echo "Groups: $groups"
+        echo "Home Directory: $home"
+        echo "Shell: $shell"
+        echo ""
+    done
+    echo "--------------------------------------------------"
+    echo ""
+    echo "Open Ports on this Device:"
+    echo ""
+    netstat -tuln
+    echo "--------------------------------------------------"
+    echo ""
+    echo "Bash History:"
+    echo ""
+    cat ~/.bash_history
     echo "--------------------------------------------------"
     echo ""
     echo "Disk Usage:"
@@ -43,12 +72,6 @@ output_file="output_$(date +%Y%m%d_%H%M%S).txt"
     echo "Running Tasks:"
     echo ""
     ps aux
-    echo "--------------------------------------------------"
-    echo ""
-    echo "Bash History:"
-    echo ""
-    history
-    echo ""
     echo "--------------------------------------------------"
     echo ""
     echo "Additionally Installed Programs:"
