@@ -13,6 +13,27 @@ echo "Scanning for NTFS drives..."
 # Get a list of NTFS partitions
 NTFS_PARTITIONS=$(diskutil list | grep Windows_NTFS | awk '{print $NF}')
 
+echo "Scanning for already mounted NTFS drives..."
+
+# Get a list of mounted NTFS partitions
+MOUNTED_NTFS_PARTITIONS=$(mount | grep ntfs | awk '{print $1}')
+
+# Unmount each NTFS partition found
+for PARTITION in $MOUNTED_NTFS_PARTITIONS; do
+    echo "Unmounting $PARTITION..."
+    sudo umount "$PARTITION"
+    
+    # Verify the unmount
+    if mount | grep "$PARTITION" > /dev/null; then
+        echo "Failed to unmount $PARTITION."
+    else
+        echo "$PARTITION unmounted successfully."
+    fi
+done
+
+echo "All NTFS drives mounted my macOS -> unmounted"
+
+
 # Mount each NTFS partition found
 MOUNT_INDEX=1
 for PARTITION in $NTFS_PARTITIONS; do
