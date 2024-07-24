@@ -23,7 +23,7 @@ sudo apt install git python3-pip python3-dev rpi.gpio-common
 
 # Clone lib from github
 git clone https://github.com/JCTRoth/RPi.GPIO-PineA64-Python3.git
-cd RPi.GPIO-PineA64/
+cd RPi.GPIO-PineA64-Python3/
 
 # Install the lib in the system
 # Than check if installation was made
