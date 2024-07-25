@@ -29,12 +29,6 @@ cd RPi.GPIO-PineA64-Python3/
 # Than check if installation was made
 sudo python3 setup.py install
 
-sudo pip3 install RPi.GPIO --break-system-packages
-if [ $? -ne 0 ]; then
-    echo "Error: Failed to install the RPi.GPIO package."
-    exit 1
-fi
-
 # Run Tests
 echo "Run GPIO Tests."
 sudo python3 ./test/test.py
