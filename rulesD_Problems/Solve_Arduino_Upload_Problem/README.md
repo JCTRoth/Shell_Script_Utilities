@@ -1,3 +1,5 @@
+# Setup Hardware Udev Rules
+
 By running this script, you configure your Linux system to allow non-root users to access USB devices like Arduino boards. This resolves permission issues that can prevent you from uploading sketches using PlatformIO in VSCode or any other development environment. The script automates the process of downloading, installing, and applying the necessary udev rules, making it easier to set up your development environment.
 
 The script you provided is used to configure udev rules on a Linux system to allow non-root users to access USB devices, such as Arduino boards, without needing root permissions.
