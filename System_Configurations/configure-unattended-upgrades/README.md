@@ -1,5 +1,7 @@
 # Configure Unattended Upgrades Script
 
+Unattended Upgrades is a package in Debian and Ubuntu systems that allows for automatic installation of security updates, ensuring that your system remains secure and up-to-date without requiring manual intervention.
+
 This script configures unattended-upgrades on a Debian-based system to automatically download and install updates. \
 You can customize various settings such as email notifications, reboot behavior, and the specific time for automatic reboots.
 
