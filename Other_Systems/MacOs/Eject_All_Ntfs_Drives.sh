@@ -1,11 +1,15 @@
 #!/bin/sh
 
+# Path to the log file on the desktop
+LOG_FILE="$HOME/Desktop/ntfs_eject.log"
+
 notify() {
     osascript -e "display notification \"$1\" with title \"NTFS Drive Eject\""
 }
 
 log() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1"
+    local message="$(date '+%Y-%m-%d %H:%M:%S') - $1"
+    echo "$message" | tee -a "$LOG_FILE"  # Log to file and stdout
     notify "$1"
 }
 
