@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# https://github.com/arduino/help-center-content/issues/155
+sudo apt remove brltty
+
 # Download the udev rules file
 wget -q https://raw.githubusercontent.com/platformio/platformio-core/develop/platformio/assets/system/99-platformio-udev.rules || { echo "Failed to download udev rules file."; exit 1; }
 
