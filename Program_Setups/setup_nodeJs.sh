@@ -11,6 +11,9 @@ echo "-----------------------------------" >> $LOG_FILE
 echo "IMPORTANT: Please ensure you are using the current LTS (Long-Term Support) version of Node.js." | tee -a $LOG_FILE
 echo "You can check the latest LTS version on the official Node.js website: https://nodejs.org/" | tee -a $LOG_FILE
 
+# If installed brefore, remove the old system packages
+apt-get purge nodejs npm
+
 # Variables for the Node.js version and download URL
 NODE_VERSION="v22.11.0"
 NODE_DISTRO="node-${NODE_VERSION}-linux-x64"
