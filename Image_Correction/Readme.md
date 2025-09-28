@@ -1,16 +1,51 @@
 # Image Processing Scripts
 
+## Requirements
+
+- **ImageMagick**: Install using:
+  - **Windows**: winget install -e --id ImageMagick.ImageMagick
+  - **macOS**: `brew install imagemagick`
+  - **Ubuntu**: `sudo apt install imagemagick`
+
+
+# Automatic Brightenup Images
+
+Brightens slightly dark images, skips very dark ones, and copies ideal images.  
+Uses ImageMagick with gamma, modulate, level, sigmoidal contrast, and optional desaturation.  
+Uses a three steps pipline to do this.
+
+## Usage
+
+```bash
+./brighten.sh [--input_dir=PATH] [--output_dir=PATH] [--brightness_factor=FACTOR] [--threshold=TARGET_BRIGHT]
+````
+
+### Examples
+
+```bash
+./brighten.sh
+./brighten.sh --input_dir=./input
+./brighten.sh --input_dir=./input --output_dir=./output
+./brighten.sh --input_dir=./input --output_dir=./output --brightness_factor=1.2
+./brighten.sh --input_dir=./input --output_dir=./output --threshold=60
+```
+
+## Notes
+
+* Images below threshold skipped, above threshold copied
+* Adding chnaged parameters to the file name of the images.
+
+```
+```
+
+
+
 ## Normalize Images
 
 ### Overview
 
 This script processes `.jpg` and `.jpeg` images by normalizing brightness and contrast, and optionally enhancing saturation and adjusting hue based on user-defined parameters. The processed images are saved to a specified output directory.
 
-### Requirements
-
-- **ImageMagick**: Install using:
-  - **macOS**: `brew install imagemagick`
-  - **Ubuntu**: `sudo apt install imagemagick`
 
 ### Usage
 
