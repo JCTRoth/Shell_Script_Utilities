@@ -3,7 +3,7 @@
 ## Requirements
 
 - **ImageMagick**: Install using:
-  - **Windows**: winget install -e --id ImageMagick.ImageMagick
+  - **Windows**: `winget install -e --id ImageMagick.ImageMagick`
   - **macOS**: `brew install imagemagick`
   - **Ubuntu**: `sudo apt install imagemagick`
 
@@ -34,10 +34,6 @@ Uses a three steps pipline to do this.
 
 * Images below threshold skipped, above threshold copied
 * Adding chnaged parameters to the file name of the images.
-
-```
-```
-
 
 
 ## Normalize Images
