@@ -1,22 +1,23 @@
 = Shell Script Utilities
-
 A collection of useful shell scripts for Linux system administration, package management, and development setup.
 
 == Overview
 
-This repository contains various shell scripts designed to simplify common tasks on Linux systems, including package management, system configuration, backups, and development tools setup.
+This repository contains various shell scripts designed to simplify common tasks on Linux systems, including package management, system configuration, backups, and development environment setup.
 
 == Utilities
 
 === Backup and Restore Sources
 
-Backups and restores package sources and connected keys of Debian based systems. Debian based systems are: Ubuntu, Linux Mint, etc.
+Backs up and restores package sources and associated keys of Debian-based systems  
+(e.g., Ubuntu, Linux Mint, etc.).
 
-The script has a terminal based input menu.
+The script provides a terminal-based input menu.
 
 **Scripts:**
-* `Backup_Source_and_Key.sh` - Creates backup of package sources and keys
-* `Restore_Source_and_Key.sh` - Restores package sources and keys from backup
+
+* `Backup_Source_and_Key.sh` – Creates a backup of package sources and keys
+* `Restore_Source_and_Key.sh` – Restores package sources and keys from a backup
 
 **Location:** `Backup_Tools/Backup_and_Restore_Sources/`
 
@@ -24,10 +25,11 @@ The script has a terminal based input menu.
 
 === Backup Folder
 
-Backups a Folder and preserves the attributes of the files in it. This means that TimeStamps or the DateOfCreation sustain.
-There is also the possibility to compress the folder in addition.
+Backs up a folder while preserving file attributes  
+(e.g., timestamps and creation dates).  
+Optional folder compression is supported.
 
-The script has a terminal based input menu.
+The script provides a terminal-based input menu.
 
 **Script:** `Backup_Folder.sh`
 
@@ -37,9 +39,8 @@ The script has a terminal based input menu.
 
 === Generate System Logs
 
-**Generate_Compact_System_Status.sh** -> Short Hardware report.
-
-**Generate_System_Report.sh** -> Extensive status report of the system.
+* `Generate_Compact_System_Status.sh` – Short hardware and system status report  
+* `Generate_System_Report.sh` – Extensive system status report
 
 **Location:** `Generate_System_Logs/`
 
@@ -47,7 +48,7 @@ The script has a terminal based input menu.
 
 === List Installation
 
-**install_list.sh** -> installs a list of packages
+* `install_list.sh` – Installs a list of packages
 
 Example:
 [source,bash]
@@ -55,19 +56,26 @@ Example:
 sudo ./install_list.sh ./lists/serverInstallation.list
 ----
 
-**add_pack.sh** -> adds a package from the package manager to the system
-
-add_pack also prevents from duplications and typos in the list.
+* `add_pack.sh` – Adds a package from the system package manager to a list  
+  *Prevents duplicate entries and typos.*
 
 **Available Lists:**
-* `developer.list` - Development tools and IDEs
-* `home_server_installation.list` - Home server packages
-* `install_latex.list` - LaTeX and document processing tools
-* `mint_post_install_DEV.list` - Linux Mint developer post-install
-* `mint_post_install.list` - Linux Mint general post-install
-* `PHPinstall.list` - PHP development environment
-* `python.list` - Python development tools
-* `serverInstallation.list` - Server administration tools
+
+* `developer.list` – Development tools and IDEs
+
+* `home_server_installation.list` – Home server packages
+
+* `install_latex.list` – LaTeX and document processing tools
+
+* `mint_post_install_DEV.list` – Linux Mint developer post-install
+
+* `mint_post_install.list` – Linux Mint general post-install
+
+* `PHPinstall.list` – PHP development environment
+
+* `python.list` – Python development tools
+
+* `serverInstallation.list` – Server administration tools
 
 **Location:** `List_Installation/`
 
@@ -75,10 +83,11 @@ add_pack also prevents from duplications and typos in the list.
 
 === Add Fonts
 
-Copys your fonts to the system.
+Copies your fonts to the system.
 
 **Scripts:**
-* `copieToSystem.sh` - Copies fonts to system directories
+
+* `copieToSystem.sh` – Copies fonts into system font directories
 
 **Location:** `Add_Fonts/`
 
@@ -86,7 +95,7 @@ Copys your fonts to the system.
 
 === Solve Android Mount Problem
 
-Opens ports for ADB and MTP on Linux.
+Opens required ports for ADB and MTP on Linux.
 
 **Script:** `copyToDestination.sh`
 
@@ -96,7 +105,7 @@ Opens ports for ADB and MTP on Linux.
 
 === Solve Arduino Upload Problem
 
-Setup udev rules for Arduino board uploads on Linux.
+Configures udev rules for Arduino board uploads on Linux.
 
 **Script:** `setup_hardware_udev_rules.sh`
 
@@ -104,11 +113,12 @@ Setup udev rules for Arduino board uploads on Linux.
 
 ---
 
-=== Usefull Commands
+=== Useful Commands
 
-Contains useful commands and hints for Linux admins.
+Contains various useful command examples and hints for Linux administrators.
 
-**Location:** `Usefull_Commands/`
+**Location:** `Usefull_Commands/`  
+(Directory name kept as-is)
 
 ---
 
@@ -117,10 +127,11 @@ Contains useful commands and hints for Linux admins.
 Automated setup scripts for various development environments.
 
 **Scripts:**
-* `setup_fish.sh` - Setup Fish shell
-* `setup_LAMP.sh` - Setup LAMP stack (Linux, Apache, MySQL, PHP)
-* `setup_nodeJs.sh` - Setup Node.js environment
-* `Pine64_GPIO_Setup/` - GPIO setup for Pine64 devices
+
+* `setup_fish.sh` – Setup for the Fish shell
+* `setup_LAMP.sh` – Setup for LAMP stack (Linux, Apache, MySQL, PHP)
+* `setup_nodeJs.sh` – Setup for the Node.js environment
+* `Pine64_GPIO_Setup/` – GPIO setup for Pine64 devices
 
 **Location:** `Program_Setups/`
 
@@ -131,8 +142,9 @@ Automated setup scripts for various development environments.
 System configuration and optimization scripts.
 
 **Scripts:**
-* `Disable_Window_Animations.sh` - Disable window animations for performance
-* `configure-unattended-upgrades/` - Setup automatic security updates
+
+* `Disable_Window_Animations.sh` – Disable window animations for performance
+* `configure-unattended-upgrades/` – Configure automatic security updates
 
 **Location:** `System_Configurations/`
 
@@ -143,8 +155,9 @@ System configuration and optimization scripts.
 Scripts for image processing and correction.
 
 **Scripts:**
-* `auto_brightenup_images.sh` - Automatic image brightness correction
-* `normalise_images.sh` - Normalize image properties
+
+* `auto_brightenup_images.sh` – Automatic image brightness correction
+* `normalise_images.sh` – Normalize image properties
 
 **Location:** `Image_Correction/`
 
@@ -152,22 +165,24 @@ Scripts for image processing and correction.
 
 === Other Systems
 
-Scripts for other operating systems and platforms.
+Scripts for additional operating systems and platforms.
 
 ==== Android
 
 **Scripts:**
-* `Generate_Android_System_Report.sh` - Generate Android system reports
+
+* `Generate_Android_System_Report.sh` – Generate Android system reports
 
 **Location:** `Other_Systems/Android/`
 
 ==== MacOS
 
 **Scripts:**
-* `agree_to_xcode.sh` - Automate Xcode license agreement
-* `Eject_All_Ntfs_Drives.sh` - Eject all NTFS drives
-* `Mount_All_Ntfs_Drives.sh` - Mount all NTFS drives
-* `Run_Install.sh` - Run installation scripts
+
+* `agree_to_xcode.sh` – Automate Xcode license agreement
+* `Eject_All_Ntfs_Drives.sh` – Eject all NTFS drives
+* `Mount_All_Ntfs_Drives.sh` – Mount all NTFS drives
+* `Run_Install.sh` – Run installation scripts
 
 **Location:** `Other_Systems/MacOs/`
 
@@ -245,20 +260,3 @@ sudo ./Backup_Source_and_Key.sh
 cd List_Installation
 sudo ./add_pack.sh
 ----
-
-== Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Add your script with proper documentation
-4. Test thoroughly
-5. Submit a pull request
-
-== License
-
-See LICENSE file for details.
-
-== Disclaimer
-
-Use these scripts at your own risk. Always backup your system before running scripts that modify system configuration.</content>
-<parameter name="filePath">/home/jonas/Git/Shell_Script_Utilities/README.adoc
