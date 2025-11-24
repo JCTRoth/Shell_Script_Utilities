@@ -18,7 +18,7 @@ LOGFILE="adb_debloat_$(date +%Y%m%d_%H%M%S).log"  # Log file for all operations
 DRY_RUN=true  # Default to dry-run mode for safety
 ACTION="preview"  # Default action: preview (can be 'uninstall' or 'disable')
 BACKUP_DIR="debloat_backup_$(date +%Y%m%d_%H%M%S)"  # Directory for backups if enabled
-BLACKLIST_FILE="safe_blacklist.txt"  # File containing safe package blacklist
+BLACKLIST_FILE="blacklist.list"  # File containing safe package blacklist
 SIMULATE=false  # When true, write commands to a file instead of executing
 SIM_OUTPUT_FILE="adb_debloat_cmds_$(date +%Y%m%d_%H%M%S).sh"
 PHONE_SIM=false
@@ -115,7 +115,7 @@ pkg_is_present() {
       return 1
     fi
   fi
-  adb shell pm list packages | grep -q ":$pkg"
+  adb shell pm list packages | grep -q "$pkg"
 }
 
 # Logging function: prints to console and appends to log file
@@ -272,13 +272,14 @@ log "Starting adb_bloatware_remover (DRY_RUN=$DRY_RUN, ACTION=$ACTION)"
 # Main processing loop: iterate over each package list file
 SUMMARY=()
 for f in "${FILES[@]}"; do
+  log "Processing file: $f"
   if [ ! -f "$f" ]; then
     log "Package list $f not found, skipping"
     continue
   fi
   # Read packages from file
   pkgs=$(read_package_list "$f")
-  while IFS= read -r pkg; do
+  for pkg in $(echo "$pkgs" | tr -d '\r'); do
     [ -z "$pkg" ] && continue  # Skip empty lines
     if is_blacklisted "$pkg"; then
       log "SKIP (blacklisted): $pkg"
@@ -287,7 +288,6 @@ for f in "${FILES[@]}"; do
     fi
     # Verify package exists on device (or simulated list)
     if ! pkg_is_present "$pkg"; then
-      # skip silently when not present on device/simulation
       continue
     fi
     # Decide per-package action (disable if in disable list, otherwise global ACTION)
