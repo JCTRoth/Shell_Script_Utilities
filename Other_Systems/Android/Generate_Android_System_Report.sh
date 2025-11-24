@@ -147,6 +147,32 @@ echo "Collecting system information..."
     echo "CPU Min Frequency: ${cpu_min_freq_ghz} GHz"
 
     echo ""
+    echo "CPU Frequency Usage (% of active time spent at each frequency since reboot):"
+    echo "The sum of percentages can be lower than 100% if the CPU was idle,deep sleep for some time."
+    uptime_ticks=$(echo "$uptime_seconds * 100" | bc)
+    for ((i=0; i<cpu_cores; i++)); do
+        echo "CPU$i:"
+        time_in_state=$(adb shell cat /sys/devices/system/cpu/cpu$i/cpufreq/stats/time_in_state 2>/dev/null)
+        if [ -n "$time_in_state" ]; then
+            total_active=$(echo "$time_in_state" | awk '{sum += $2} END {print sum}')
+            if [ "$total_active" -gt 0 ]; then
+                echo "$time_in_state" | while read -r freq time; do
+                    if [ "$time" -gt 0 ]; then
+                        seconds=$(echo "scale=1; $time * 0.01" | bc 2>/dev/null || echo "0.0")
+                        pct=$(echo "scale=1; ($time / $total_active) * 100" | bc 2>/dev/null || echo "0.0")
+                        freq_ghz=$(echo "scale=2; $freq / 1000000" | bc 2>/dev/null | sed 's/^0\././' || echo ".00")
+                        echo "  $freq_ghz GHz: $seconds s ($pct%)"
+                    fi
+                done
+            else
+                echo "  No active time recorded"
+            fi
+        else
+            echo "  Stats not available"
+        fi
+    done
+
+    echo ""
     echo "Screen Info:"
     screen_resolution=$(adb shell wm size | awk '{print $3}')
     screen_density=$(adb shell wm density | awk '{print $3}')
