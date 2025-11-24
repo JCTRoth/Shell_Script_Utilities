@@ -1,12 +1,12 @@
 # Example bloatware package list for Xiaomi/MIUI devices
 # These packages are commonly considered bloatware and can be safely removed/disabled
 # Check on your specific device before removing, as some may be required for certain features
-# One package name per line, comments with #
+# One package name per line, comments with '#'
 
 # Xiaomi services (mostly bloat)
 com.xiaomi.ab
 com.xiaomi.aiasst.service
-# com.xiaomi.bluetooth
+#com.xiaomi.bluetooth
 com.xiaomi.gamecenter.sdk.service
 com.xiaomi.joyose
 com.xiaomi.mi_connect_service
@@ -31,30 +31,30 @@ com.miui.cloudbackup
 com.miui.cloudservice
 com.miui.cloudservice.sysbase
 com.miui.contentcatcher
-# com.miui.hybrid
-# com.miui.hybrid.accessory
+#com.miui.hybrid
+#com.miui.hybrid.accessory
 com.miui.maintenancemode
 com.miui.micloudsync
-# com.miui.miservice
+#com.miui.miservice
 com.miui.mishare.connectivity
 com.miui.misound
 com.miui.nextpay
-com.miui.personalassistant
+#com.miui.personalassistant
 com.miui.phrase
-# com.miui.smsextra
-# com.miui.systemAdSolution
-# com.miui.touchassistant
+#com.miui.smsextra
+#com.miui.systemAdSolution
+#com.miui.touchassistant
 com.miui.translation.kingsoft
 com.miui.translation.xmcloud
 com.miui.translation.youdao
-# com.miui.translationservice
-# com.miui.voiceassist
+#com.miui.translationservice
+#com.miui.voiceassist
 com.miui.voicetrigger
-# com.miui.vsimcore
-# com.miui.wmsvc
+#com.miui.vsimcore
+#com.miui.wmsvc
 com.miui.weather2
 com.miui.android.fashiongallery
-# com.mobiletools.systemhelper
+#com.mobiletools.systemhelper
 
 # Third-party apps (common bloat)
 com.android.chrome
@@ -63,9 +63,9 @@ com.linkedin.android
 com.jewelsblast.ivygames.Adventure.free
 com.amazon.mShop.android.shopping
 com.ss.android.ugc.trill
-# com.booking
+#com.booking
 com.crazy.juicer.xm
-# com.spotify.music
+#com.spotify.music
 com.sukhavati.gotoplaying.bubble.BubbleShooter.mint
 com.netflix.mediaclient
 com.mi.global.bbs
@@ -76,10 +76,10 @@ com.logame.eliminateintruder3d
 cn.wps.xiaomi.abroad.lite
 com.nf.snake
 com.google.android.apps.subscriptions.red
-# com.google.android.googlequicksearchbox
+#com.google.android.googlequicksearchbox
 com.mintgames.wordtrip
 ctrip.english
-# com.google.android.apps.photos
+#com.google.android.apps.photos
 com.mintgames.triplecrush.tile.fun
 com.amazon.appmanager
 com.mi.global.shop
@@ -110,7 +110,6 @@ com.mipay.wallet.id
 com.mipay.wallet.in
 com.xiaomi.mirecycle
 com.miui.videoplayer
-com.miui.miwallpaper
 com.miui.player
 com.miui.notes
 com.android.providers.partnerbookmarks

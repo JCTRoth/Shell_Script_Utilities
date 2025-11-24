@@ -16,5 +16,5 @@ com.miui.touchassistant
 com.miui.backup           # Backup & restore (can disable; not recommended)
 com.miui.freeform         # Freeform windows (multi-window; can disable)
 com.miui.face             # Face recognition (biometric auth; can disable)
-com.miui.miwallpaper      # Desktop wallpaper service (can disable)
+#com.miui.miwallpaper      # Desktop wallpaper service (can disable)
 com.miui.aod              # Always-on display (AOD; can disable)
