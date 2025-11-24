@@ -1,0 +1,51 @@
+# Safe package blacklist for adb_bloatware_remover.sh
+# These packages should NEVER be uninstalled or disabled as they are critical for Android functionality
+# One package name per line, comments with #
+
+#
+# Stock Android
+#
+com.android.systemui            # System UI (status bar, navigation)
+android                         # Core Android package
+com.android.phone               # Phone/dialer functionality
+com.android.providers.settings  # System settings provider
+com.android.providers.downloads # Downloads provider
+com.android.providers.media     # Media provider
+com.google.android.gms          # Google Play Services
+com.google.android.gsf          # Google Services Framework
+com.android.vending             # Google Play Store
+
+# Additional critical system packages
+com.android.settings            # System Settings app
+com.android.contacts            # Contacts provider
+com.android.dialer              # Phone dialer app
+com.android.mms                 # Messaging/SMS app
+com.android.inputmethod.latin   # Default Latin IME (keyboard)
+com.android.bluetooth           # Bluetooth service
+com.android.wifi                # WiFi service
+com.android.location.fused      # Fused location provider
+com.android.server.telecom      # Telecom server
+com.android.providers.contacts  # Contacts database provider
+com.android.providers.telephony # Telephony provider
+
+# Xiaomi-specific critical packages
+com.xiaomi.xmsf                # Xiaomi Push Service (critical for notifications)
+com.xiaomi.xmsfkeeper          # Xiaomi Push Service Keeper
+com.miui.daemon                # MIUI Daemon (system service)
+
+# Additional critical MIUI/Xiaomi packages
+com.miui.securitycenter        # MIUI Security Center (security features)
+com.xiaomi.finddevice          # Find My Device (device tracking)
+com.lbe.security.miui          # MIUI Security (antivirus/optimization)
+com.android.updater            # System Updater (OTA updates)
+com.miui.packageinstaller      # MIUI Package Installer
+com.xiaomi.account             # Xiaomi Account (authentication)
+com.miui.powerkeeper           # MIUI Power Keeper (battery management)
+com.miui.accessibility         # MIUI Accessibility (accessibility services)
+com.miui.backup                # MIUI Backup (data backup)
+com.miui.face                  # MIUI Face Unlock (biometric auth)
+
+# System apps (additional)
+com.android.camera             # Camera app
+com.android.captiveportallogin # Captive portal login
+com.android.keychain           # Keychain (credential storage)

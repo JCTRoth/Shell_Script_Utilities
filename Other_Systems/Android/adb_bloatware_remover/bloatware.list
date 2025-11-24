@@ -1,0 +1,122 @@
+# Example bloatware package list for Xiaomi/MIUI devices
+# These packages are commonly considered bloatware and can be safely removed/disabled
+# Check on your specific device before removing, as some may be required for certain features
+# One package name per line, comments with #
+
+# Xiaomi services (mostly bloat)
+com.xiaomi.ab
+com.xiaomi.aiasst.service
++ com.xiaomi.bluetooth
+com.xiaomi.gamecenter.sdk.service
+com.xiaomi.joyose
+com.xiaomi.mi_connect_service
+com.xiaomi.micloud.sdk
+com.xiaomi.migameservice
+com.xiaomi.miplay_client
+com.xiaomi.mircs
+com.xiaomi.mirror
+com.xiaomi.payment
+com.xiaomi.powerchecker
+com.xiaomi.simactivate.service
+com.xiaomi.smarthome
+com.xiaomi.scanner
+com.xiaomi.calendar
+com.xiaomi.midrop
+
+# MIUI services (bloat)
+com.milink.service
+com.miui.analytics
+com.miui.audioeffect
+com.miui.audiomonitor
+com.miui.bugreport
+com.miui.cit
+com.miui.cloudbackup
+com.miui.cloudservice
+com.miui.cloudservice.sysbase
+com.miui.contentcatcher
+com.miui.hybrid
+com.miui.hybrid.accessory
+com.miui.maintenancemode
+com.miui.micloudsync
+com.miui.miservice
+com.miui.mishare.connectivity
+com.miui.misound
+com.miui.nextpay
+com.miui.personalassistant
+com.miui.phrase
+com.miui.smsextra
+com.miui.systemAdSolution
+com.miui.touchassistant
+com.miui.translation.kingsoft
+com.miui.translation.xmcloud
+com.miui.translation.youdao
+# com.miui.translationservice
+# com.miui.voiceassist
+com.miui.voicetrigger
+com.miui.vsimcore
+com.miui.wmsvc
+com.miui.weather2
+com.miui.android.fashiongallery
+com.mobiletools.systemhelper
+
+# Third-party apps (common bloat)
+com.android.chrome
+com.google.android.apps.youtube.music
+com.linkedin.android
+com.jewelsblast.ivygames.Adventure.free
+com.amazon.mShop.android.shopping
+com.ss.android.ugc.trill
+com.booking
+com.crazy.juicer.xm
+com.spotify.music
+com.sukhavati.gotoplaying.bubble.BubbleShooter.mint
+com.netflix.mediaclient
+com.mi.global.bbs
+com.agoda.mobile.consumer
+com.block.puzzle.game.hippo.mi
+com.duokan.phone.remotecontroller
+com.logame.eliminateintruder3d
+cn.wps.xiaomi.abroad.lite
+com.nf.snake
+com.google.android.apps.subscriptions.red
+# com.google.android.googlequicksearchbox  # Commented out: Google Search - core search functionality
+com.mintgames.wordtrip
+ctrip.english
+# com.google.android.apps.photos  # Commented out: Google Photos - photo backup and management
+com.mintgames.triplecrush.tile.fun
+com.amazon.appmanager
+com.mi.global.shop
+com.facebook.katana
+com.shopee.sg
+
+# Additional bloatware from user-provided list
+com.mi.android.globalminusscreen
+com.android.browser
+com.miui.calculator
+com.android.calendar
+com.bsp.catchlog
+com.miui.cleanmaster
+com.miui.compass
+com.miui.fm
+com.facebook.appmanager
+com.facebook.services
+com.facebook.system
+com.xiaomi.gameboosterglobal
+com.xiaomi.glgm
+com.xiaomi.mipicks
+com.miui.msa.global
+com.android.google.feedback
+com.mi.globalbrowser
+com.mi.android.globalFileexplorer
+com.miui.huanji
+com.mipay.wallet.id
+com.mipay.wallet.in
+com.xiaomi.mirecycle
+com.miui.videoplayer
+com.miui.miwallpaper
+com.miui.player
+com.miui.notes
+com.android.providers.partnerbookmarks
+com.android.soundrecorder
+com.miui.screenrecorder
+com.miui.yellowpage
