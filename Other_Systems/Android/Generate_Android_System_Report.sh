@@ -180,6 +180,16 @@ echo "Collecting system information..."
     echo "Screen Density: $screen_density dpi"
 
     echo ""
+    echo "Top 10 processes sorted by CPU usage."
+    echo "---- top (adb) - CPU ----"
+    adb shell top -n 1 -m 10 -s 6 2>/dev/null | sed 's/^/    /'
+
+    echo ""
+    echo "Top Output (Process snapshot - Memory sorted):"
+    echo "---- top (adb) - Memory ----"
+    adb shell top -n 1 -m 10 -s 5 2>/dev/null | sed 's/^/    /'
+
+    echo ""
     echo "Internal Storage Size:"
     adb shell df -h | grep '/data'
 
