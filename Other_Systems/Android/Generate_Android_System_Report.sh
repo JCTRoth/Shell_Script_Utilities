@@ -114,22 +114,31 @@ echo "Collecting system information..."
     echo "Battery Temperature: ${battery_temperature_celsius}°C"
 
     echo ""
+    echo "Uptime (Time since last reboot):"
+    uptime_seconds=$(adb shell cat /proc/uptime | awk '{print int($1)}')
+    uptime_days=$((uptime_seconds / 86400))
+    uptime_hours=$(( (uptime_seconds % 86400) / 3600 ))
+    uptime_minutes=$(( (uptime_seconds % 3600) / 60 ))
+    uptime_seconds_remain=$((uptime_seconds % 60))
+    echo "${uptime_days} days, ${uptime_hours} hours, ${uptime_minutes} minutes, ${uptime_seconds_remain} seconds"
+
+    echo ""
     echo "CPU Info:"
     cpuinfo=$(adb shell cat /proc/cpuinfo)
 
     # Calculate total number of cores
-    total_cores=$(echo "$cpuinfo" | grep -c '^Processor')
+    total_cores=$(echo "$cpuinfo" | grep -c '^processor')
 
     # Gather and combine core information
-    cpu_model=$(echo "$cpuinfo" | grep 'Hardware' | head -n 1 | sed 's/Hardware\t: //')
+    cpu_model=$(echo "$cpuinfo" | grep 'Hardware' | head -n 1 | sed 's/^Hardware[ \t]*:[ \t]*//')
     cpu_cores=$(echo "$cpuinfo" | grep 'processor' | wc -l)
     cpu_architecture=$(adb shell getprop ro.product.cpu.abi)
 
     # Get CPU frequency
-    cpu_max_freq=$(adb shell cat /sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq)
-    cpu_min_freq=$(adb shell cat /sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_min_freq)
-    cpu_max_freq_ghz=$(echo "scale=2; $cpu_max_freq / 1000000" | bc)
-    cpu_min_freq_ghz=$(echo "scale=2; $cpu_min_freq / 1000000" | bc)
+    cpu_max_freq=$(adb shell cat /sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq 2>/dev/null || echo "0")
+    cpu_min_freq=$(adb shell cat /sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_min_freq 2>/dev/null || echo "0")
+    cpu_max_freq_ghz=$(echo "scale=2; $cpu_max_freq / 1000000" | bc 2>/dev/null || echo "0.00")
+    cpu_min_freq_ghz=$(echo "scale=2; $cpu_min_freq / 1000000" | bc 2>/dev/null || echo "0.00")
 
     echo "CPU Model: $cpu_model"
     echo "CPU Architecture: $cpu_architecture"
@@ -147,10 +156,6 @@ echo "Collecting system information..."
     echo ""
     echo "Internal Storage Size:"
     adb shell df -h | grep '/data'
-
-    echo ""
-    echo "RAM and Process Info:"
-    adb shell top -b -n 1 -m 30
 
     echo ""
     echo "Audio Info:"
@@ -178,7 +183,7 @@ echo "Logcat saved to $logcat_file"
 echo "Collecting dumpsys..."
 
 # save dumpsys
-adb shell dumpsys > "$dumpsys_file"
+adb shell dumpsys 2>/dev/null > "$dumpsys_file"
 
 echo "Dumpsys file saved to $dumpsys_file"
 
