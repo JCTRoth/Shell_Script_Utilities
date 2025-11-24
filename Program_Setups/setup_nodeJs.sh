@@ -15,12 +15,42 @@ echo "You can check the latest LTS version on the official Node.js website: http
 apt-get purge nodejs npm
 
 # Variables for the Node.js version and download URL
-NODE_VERSION="v22.11.0"
+# Try to detect the latest Node.js LTS version from the official index.json
+DEFAULT_NODE_VERSION="v22.11.0"
+NODE_VERSION=$(curl -s https://nodejs.org/dist/index.json | jq -r '[.[] | select(.lts != false)][0].version' 2>/dev/null || echo "$DEFAULT_NODE_VERSION")
+if [ -z "$NODE_VERSION" ]; then
+  NODE_VERSION="$DEFAULT_NODE_VERSION"
+fi
 NODE_DISTRO="node-${NODE_VERSION}-linux-x64"
 NODE_TAR="${NODE_DISTRO}.tar.xz"
 NODE_URL="https://nodejs.org/dist/${NODE_VERSION}/${NODE_TAR}"
+echo "Selected Node.js version: ${NODE_VERSION}" | tee -a $LOG_FILE
 INSTALL_DIR="/opt"
 BIN_DIR="/usr/local/bin"
+
+# Detect system architecture and adapt Node binary suffix
+ARCH=$(uname -m)
+case "$ARCH" in
+  x86_64|amd64)
+    NODE_ARCH="x64";
+    ;;
+  aarch64|arm64)
+    NODE_ARCH="linux-arm64";
+    ;;
+  armv7l|armhf)
+    NODE_ARCH="linux-armv7l";
+    ;;
+  *)
+    NODE_ARCH="x64";
+    echo "Warning: Unknown architecture $ARCH, falling back to x64" | tee -a $LOG_FILE
+    ;;
+esac
+
+# Rebuild distro name and URL with architecture
+NODE_DISTRO="node-${NODE_VERSION}-${NODE_ARCH}"
+NODE_TAR="${NODE_DISTRO}.tar.xz"
+NODE_URL="https://nodejs.org/dist/${NODE_VERSION}/${NODE_TAR}"
+echo "Detected architecture: $ARCH -> using $NODE_ARCH" | tee -a $LOG_FILE
 
 # Step 1: Download the Node.js tarball
 echo "Downloading Node.js LTS version ${NODE_VERSION}..." | tee -a $LOG_FILE
