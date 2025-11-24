@@ -45,6 +45,12 @@ com.miui.accessibility         # MIUI Accessibility (accessibility services)
 com.miui.backup                # MIUI Backup (data backup)
 com.miui.face                  # MIUI Face Unlock (biometric auth)
 
+# More MIUI/Xiaomi critical packages
+com.miui.home                 # MIUI Launcher (home screen)
+com.miui.guardprovider        # MIUI Guard Provider (security hooks)
+com.xiaomi.market             # Xiaomi App Store / Market
+com.miui.systemAdSolution     # MIUI System Ad Solution
+
 # System apps (additional)
 com.android.camera             # Camera app
 com.android.captiveportallogin # Captive portal login

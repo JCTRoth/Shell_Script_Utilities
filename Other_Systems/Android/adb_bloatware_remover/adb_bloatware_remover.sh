@@ -21,6 +21,9 @@ BACKUP_DIR="debloat_backup_$(date +%Y%m%d_%H%M%S)"  # Directory for backups if e
 BLACKLIST_FILE="safe_blacklist.txt"  # File containing safe package blacklist
 SIMULATE=false  # When true, write commands to a file instead of executing
 SIM_OUTPUT_FILE="adb_debloat_cmds_$(date +%Y%m%d_%H%M%S).sh"
+PHONE_SIM=false
+PHONE_SIM_FILE=""
+declare -A PHONE_SIM_MAP=()
 
 # Load safe package blacklist from file
 SAFE_BLACKLIST=()
@@ -35,6 +38,28 @@ else
   echo "Warning: Blacklist file '$BLACKLIST_FILE' not found. No packages will be blacklisted." >&2
 fi
 
+# Load disable list (packages that should be disabled instead of uninstalled)
+DISABLE_LIST_FILE="disable.list"
+DISABLE_LIST=()
+if [ -f "$DISABLE_LIST_FILE" ]; then
+  while IFS= read -r line; do
+    [[ $line =~ ^[[:space:]]*# ]] && continue
+    [[ -z $line ]] && continue
+    DISABLE_LIST+=("$line")
+  done < "$DISABLE_LIST_FILE"
+fi
+
+# Check if a package is in the disable list
+is_in_disable_list() {
+  local pkg="$1"
+  for d in "${DISABLE_LIST[@]}"; do
+    if [ "$pkg" = "$d" ]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 # Function to display usage information
 usage() {
   cat <<EOF
@@ -43,6 +68,8 @@ Options:
   -n, --dry-run        Preview actions (default)
   -y, --apply          Apply changes (uninstall/disable)
   -s, --simulate       Write the adb commands to a script file instead of executing
+  -P, --phone-sim FILE  Use FILE as simulated device package list (one package name per line)
+  -c, --capture        Capture installed packages from device (`adb shell pm list packages`) and use as simulation
   -a, --action ACTION  Action to perform: uninstall | disable (default: uninstall when --apply)
   -b, --backup         Backup APK and app data before removing (when --apply)
   -h, --help           Show this help
@@ -50,6 +77,45 @@ Options:
 Package list file:
   Plain text file with one package name per line (comments with # ignored).
 EOF
+}
+
+# Populate PHONE_SIM_MAP from adb shell pm list packages (strips 'package:')
+capture_phone_packages() {
+  log "Capturing installed packages from device via adb"
+  while IFS= read -r line; do
+    pkg=${line#package:}
+    [[ -z $pkg ]] && continue
+    PHONE_SIM_MAP["$pkg"]=1
+  done < <(adb shell pm list packages 2>/dev/null)
+  log "Phone-sim: captured $(printf "%s\n" "${!PHONE_SIM_MAP[@]}" | wc -l) packages from device"
+}
+
+# Load a phone simulation package list into a map for fast lookup
+load_phone_sim() {
+  local file="$1"
+  if [ ! -f "$file" ]; then
+    echo "Phone simulation file '$file' not found." >&2
+    exit 1
+  fi
+  while IFS= read -r line; do
+    [[ $line =~ ^[[:space:]]*# ]] && continue
+    [[ -z $line ]] && continue
+    PHONE_SIM_MAP["$line"]=1
+  done < "$file"
+  log "Phone-sim: loaded $(printf "%s\n" "${!PHONE_SIM_MAP[@]}" | wc -l) packages from $file"
+}
+
+# Check if a package is present on the (real or simulated) device
+pkg_is_present() {
+  local pkg="$1"
+  if [ "$PHONE_SIM" = true ]; then
+    if [ "${PHONE_SIM_MAP[$pkg]:-}" = "1" ]; then
+      return 0
+    else
+      return 1
+    fi
+  fi
+  adb shell pm list packages | grep -q ":$pkg"
 }
 
 # Logging function: prints to console and appends to log file
@@ -163,6 +229,10 @@ while [ "$#" -gt 0 ]; do
       DRY_RUN=false; shift;;
     -s|--simulate)
       SIMULATE=true; DRY_RUN=true; shift;;
+    -P|--phone-sim)
+      PHONE_SIM=true; PHONE_SIM_FILE="$2"; shift 2;;
+    -c|--capture)
+      PHONE_SIM=true; shift;;
     -a|--action)
       ACTION="$2"; shift 2;;
     -b|--backup)
@@ -180,8 +250,21 @@ if [ ${#FILES[@]} -eq 0 ]; then
 fi
 
 # Perform initial checks
-check_adb
-check_device
+if [ "$PHONE_SIM" = false ]; then
+  check_adb
+  check_device
+fi
+# Prepare simulation output if requested
+init_simulation_file
+# Load phone simulation file if requested
+if [ "$PHONE_SIM" = true ]; then
+  if [ -n "$PHONE_SIM_FILE" ]; then
+    load_phone_sim "$PHONE_SIM_FILE"
+  else
+    # capture from device
+    capture_phone_packages
+  fi
+fi
 
 # Start logging
 log "Starting adb_bloatware_remover (DRY_RUN=$DRY_RUN, ACTION=$ACTION)"
@@ -202,14 +285,20 @@ for f in "${FILES[@]}"; do
       SUMMARY+=("SKIP: $pkg (blacklisted)")
       continue
     fi
-    # Verify package exists on device
-    if ! adb shell pm list packages | grep -q ":$pkg"; then
-      log "NOT FOUND on device: $pkg"
-      # skip silently in summary when not found
+    # Verify package exists on device (or simulated list)
+    if ! pkg_is_present "$pkg"; then
+      # skip silently when not present on device/simulation
       continue
     fi
+    # Decide per-package action (disable if in disable list, otherwise global ACTION)
+    if is_in_disable_list "$pkg"; then
+      pkg_action="disable"
+      log "NOTE: package in disable.list — will disable instead of uninstall: $pkg"
+    else
+      pkg_action="$ACTION"
+    fi
     # Execute the chosen action
-    case "$ACTION" in
+    case "$pkg_action" in
       uninstall)
         if perform_uninstall "$pkg"; then
           SUMMARY+=("UNINSTALLED: $pkg")
