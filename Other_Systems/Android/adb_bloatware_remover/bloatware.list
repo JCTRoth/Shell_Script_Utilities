@@ -7,23 +7,24 @@
 com.xiaomi.ab
 com.xiaomi.aiasst.service
 #com.xiaomi.bluetooth
+com.xiaomi.calendar
 com.xiaomi.gamecenter.sdk.service
 com.xiaomi.joyose
 com.xiaomi.mi_connect_service
 com.xiaomi.micloud.sdk
+com.xiaomi.midrop
 com.xiaomi.migameservice
 com.xiaomi.miplay_client
 com.xiaomi.mircs
 com.xiaomi.mirror
 com.xiaomi.payment
-com.xiaomi.smarthome
 com.xiaomi.scanner
-com.xiaomi.calendar
-com.xiaomi.midrop
+com.xiaomi.smarthome
 
 # MIUI services (bloat)
 com.milink.service
 com.miui.analytics
+com.miui.android.fashiongallery
 com.miui.audiomonitor
 com.miui.bugreport
 com.miui.cit
@@ -53,67 +54,70 @@ com.miui.voicetrigger
 #com.miui.vsimcore
 #com.miui.wmsvc
 com.miui.weather2
-com.miui.android.fashiongallery
-#com.mobiletools.systemhelper
 
 # Third-party apps (common bloat)
-com.android.chrome
-com.google.android.apps.youtube.music
-com.linkedin.android
-com.jewelsblast.ivygames.Adventure.free
-com.amazon.mShop.android.shopping
-com.ss.android.ugc.trill
-#com.booking
-com.crazy.juicer.xm
-#com.spotify.music
-com.sukhavati.gotoplaying.bubble.BubbleShooter.mint
-com.netflix.mediaclient
-com.mi.global.bbs
-com.agoda.mobile.consumer
-com.block.puzzle.game.hippo.mi
-com.duokan.phone.remotecontroller
-com.logame.eliminateintruder3d
 cn.wps.xiaomi.abroad.lite
-com.nf.snake
-com.google.android.apps.subscriptions.red
-#com.google.android.googlequicksearchbox
-com.mintgames.wordtrip
 ctrip.english
-#com.google.android.apps.photos
-com.mintgames.triplecrush.tile.fun
+com.agoda.mobile.consumer
 com.amazon.appmanager
-com.mi.global.shop
+com.amazon.mShop.android.shopping
+com.android.chrome
+com.block.puzzle.game.hippo.mi
+com.crazy.juicer.xm
+com.duokan.phone.remotecontroller
 com.facebook.katana
+com.google.android.apps.subscriptions.red
+com.google.android.apps.youtube.music
+com.jewelsblast.ivygames.Adventure.free
+com.linkedin.android
+com.logame.eliminateintruder3d
+com.mi.global.bbs
+com.mi.global.shop
+com.mintgames.triplecrush.tile.fun
+com.mintgames.wordtrip
+com.netflix.mediaclient
+com.nf.snake
 com.shopee.sg
+com.ss.android.ugc.trill
+com.sukhavati.gotoplaying.bubble.BubbleShooter.mint
 
 # Additional bloatware from user-provided list
-com.mi.android.globalminusscreen
 com.android.browser
-com.miui.calculator
 com.android.calendar
+com.android.dreams.phototable
+com.android.google.feedback
+com.android.providers.partnerbookmarks
+com.android.soundrecorder
 com.bsp.catchlog
-com.miui.cleanmaster
-com.miui.compass
-com.miui.fm
 com.facebook.appmanager
 com.facebook.services
 com.facebook.system
+com.google.android.apps.subscriptions.red
+com.mi.android.globalFileexplorer
+com.mi.android.globalminusscreen
+com.mi.globalbrowser
+com.miui.calculator
+com.miui.cleanmaster
+com.miui.compass
+com.miui.fm
+com.miui.huanji
+com.miui.msa.global
+com.miui.notes
+com.miui.player
+com.miui.screenrecorder
+com.miui.videoplayer
+com.miui.yellowpage
+com.mipay.wallet.id
+com.mipay.wallet.in
+# Samsung
+com.samsung.android.arzone
+com.samsung.android.bixby.wakeup
+com.samsung.android.dynamiclock # Wallpaper services
+com.samsung.android.oneconnect # Smart Things
+com.samsung.android.tvplus # Samsung TV+
+com.samsung.android.voc # Samsung Members
+com.sec.android.app.shealth # Samsung Health
 com.xiaomi.gameboosterglobal
 com.xiaomi.glgm
 com.xiaomi.mipicks
-com.miui.msa.global
-com.android.google.feedback
-com.mi.globalbrowser
-com.mi.android.globalFileexplorer
-com.miui.huanji
-com.mipay.wallet.id
-com.mipay.wallet.in
 com.xiaomi.mirecycle
-com.miui.videoplayer
-com.miui.player
-com.miui.notes
-com.android.providers.partnerbookmarks
-com.android.soundrecorder
-com.miui.screenrecorder
-com.miui.yellowpage
-com.google.android.apps.subscriptions.red

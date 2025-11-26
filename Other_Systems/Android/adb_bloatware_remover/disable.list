@@ -5,16 +5,18 @@
 # com.example.sponsor
 
 # MIUI feature that is usually safe to disable
+#com.miui.accessibility    # Accessibility services (TTS etc.; can disable carefully)
+#com.miui.miwallpaper      # Desktop wallpaper service (can disable)
+#com.miui.powerkeeper        # Power & performance (can disable; not recommended)
+#com.miui.tsmclient         # MIUI TSM client (smartcard; can disable)
 #com.miui.vsimcore
-com.miui.touchassistant
+#com.xiaomi.metoknlp        # Network location service (can disable; not recommended)
 #com.xiaomi.powerchecker
 #com.xiaomi.simactivate.service
-#com.miui.powerkeeper        # Power & performance (can disable; not recommended)
-#com.xiaomi.metoknlp        # Network location service (can disable; not recommended)
-#com.miui.tsmclient         # MIUI TSM client (smartcard; can disable)
-#com.miui.accessibility    # Accessibility services (TTS etc.; can disable carefully)
-com.miui.backup           # Backup & restore (can disable; not recommended)
-com.miui.freeform         # Freeform windows (multi-window; can disable)
-com.miui.face             # Face recognition (biometric auth; can disable)
-#com.miui.miwallpaper      # Desktop wallpaper service (can disable)
+
+com.android.hotwordenrollment.xgoogle # Google Assistant
 com.miui.aod              # Always-on display (AOD; can disable)
+com.miui.backup           # Backup & restore (can disable; not recommended)
+com.miui.face             # Face recognition (biometric auth; can disable)
+com.miui.freeform         # Freeform windows (multi-window; can disable)
+com.miui.touchassistant
