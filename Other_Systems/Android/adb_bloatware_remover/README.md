@@ -7,6 +7,38 @@ Files
 - `bloatware.list` — example package list (one package name per line).
 - `blacklist.list` — mandatory packages to never remove (one per line).
 
+```bash
+jonas@jonas-ThinkPad-E495 ~/G/S/O/A/adb_bloatware_remover (master)> ./adb_bloatware_remover.sh --apply --action uninstall bloatware.list
+2025-11-28 20:02:50 - Starting adb_bloatware_remover (DRY_RUN=false, ACTION=uninstall)
+2025-11-28 20:02:50 - Processing file: bloatware.list
+2025-11-28 20:02:54 - Uninstalling com.android.soundrecorder for user 0
+Failure [-1000]
+2025-11-28 20:02:55 - Uninstalling com.miui.screenrecorder for user 0
+Failure [-1000]
+2025-11-28 20:02:56 - Uninstalling com.miui.gallery for user 0
+Success
+2025-11-28 20:02:57 - Uninstalling com.google.android.apps.bard for user 0
+Success
+2025-11-28 20:02:57 - Uninstalling com.android.hotwordenrollment.xgoogle for user 0
+Success
+2025-11-28 20:02:57 - Uninstalling com.android.hotwordenrollment.okgoogle for user 0
+Success
+2025-11-28 20:02:58 - Uninstalling com.android.egg for user 0
+Success
+2025-11-28 20:02:58 - Summary:
+2025-11-28 20:02:58 -   FAILED UNINSTALL: com.android.soundrecorder
+2025-11-28 20:02:58 -   FAILED UNINSTALL: com.miui.screenrecorder
+2025-11-28 20:02:58 -   FAILED UNINSTALL: services
+2025-11-28 20:02:58 -   UNINSTALLED: com.miui.gallery
+2025-11-28 20:02:58 -   UNINSTALLED: com.google.android.apps.bard
+2025-11-28 20:02:58 -   UNINSTALLED: com.android.hotwordenrollment.xgoogle
+2025-11-28 20:02:58 -   UNINSTALLED: com.android.hotwordenrollment.okgoogle
+2025-11-28 20:02:58 -   UNINSTALLED: com.android.egg
+2025-11-28 20:02:58 - Finished
+jonas@jonas-ThinkPad-E495 ~/G/S/O/A/adb_bloatware_remover (master)> 
+```
+
+
 Quick usage
 - Make script executable:
 
