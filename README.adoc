@@ -175,6 +175,12 @@ Scripts for additional operating systems and platforms.
 
 **Location:** `Other_Systems/Android/`
 
+* `Remove_Android_Bloatware.sh` –
+
+Safely preview and remove or disable Android packages (bloatware) over ADB. \
+Takes a blacklist file (Apps never to remove, negative list) and a bloatwear.list. \
+You can use the here provided files or create your own ones.
+
 ==== MacOS
 
 **Scripts:**
