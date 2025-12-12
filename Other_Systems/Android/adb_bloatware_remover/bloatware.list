@@ -3,10 +3,13 @@
 # Check on your specific device before removing, as some may be required for certain features
 # One package name per line, comments with '#'
 
+# Google
+com.google.android.googlequicksearchbox
+
 # Xiaomi services (mostly bloat)
+#com.xiaomi.bluetooth
 com.xiaomi.ab
 com.xiaomi.aiasst.service
-#com.xiaomi.bluetooth
 com.xiaomi.calendar
 com.xiaomi.gamecenter.sdk.service
 com.xiaomi.joyose
@@ -32,32 +35,31 @@ com.miui.cloudbackup
 com.miui.cloudservice
 com.miui.cloudservice.sysbase
 com.miui.contentcatcher
-#com.miui.hybrid
-#com.miui.hybrid.accessory
 com.miui.maintenancemode
 com.miui.micloudsync
-#com.miui.miservice
 com.miui.mishare.connectivity
 com.miui.misound
 com.miui.nextpay
-#com.miui.personalassistant
 com.miui.phrase
-#com.miui.smsextra
-#com.miui.systemAdSolution
-#com.miui.touchassistant
 com.miui.translation.kingsoft
 com.miui.translation.xmcloud
 com.miui.translation.youdao
+com.miui.voicetrigger
+com.miui.weather2
+#com.miui.hybrid
+#com.miui.hybrid.accessory
+#com.miui.miservice
+#com.miui.personalassistant
+#com.miui.smsextra
+#com.miui.systemAdSolution
+#com.miui.touchassistant
 #com.miui.translationservice
 #com.miui.voiceassist
-com.miui.voicetrigger
 #com.miui.vsimcore
 #com.miui.wmsvc
-com.miui.weather2
 
 # Third-party apps (common bloat)
 cn.wps.xiaomi.abroad.lite
-ctrip.english
 com.agoda.mobile.consumer
 com.amazon.appmanager
 com.amazon.mShop.android.shopping
@@ -80,19 +82,25 @@ com.nf.snake
 com.shopee.sg
 com.ss.android.ugc.trill
 com.sukhavati.gotoplaying.bubble.BubbleShooter.mint
+ctrip.english
 
 # Additional bloatware from user-provided list
 com.android.browser
 com.android.calendar
 com.android.dreams.phototable
+com.android.egg
 com.android.google.feedback
+com.android.hotwordenrollment.okgoogle
+com.android.hotwordenrollment.xgoogle
 com.android.providers.partnerbookmarks
 com.android.soundrecorder
 com.bsp.catchlog
 com.facebook.appmanager
 com.facebook.services
 com.facebook.system
+com.google.android.apps.bard
 com.google.android.apps.subscriptions.red
+com.google.ar.core
 com.mi.android.globalFileexplorer
 com.mi.android.globalminusscreen
 com.mi.globalbrowser
@@ -100,6 +108,7 @@ com.miui.calculator
 com.miui.cleanmaster
 com.miui.compass
 com.miui.fm
+com.miui.gallery
 com.miui.huanji
 com.miui.msa.global
 com.miui.notes
@@ -121,9 +130,3 @@ com.xiaomi.gameboosterglobal
 com.xiaomi.glgm
 com.xiaomi.mipicks
 com.xiaomi.mirecycle
-com.miui.gallery
-com.google.android.apps.bard
-com.android.hotwordenrollment.xgoogle
-com.android.hotwordenrollment.okgoogle
-com.google.ar.core
-com.android.egg
