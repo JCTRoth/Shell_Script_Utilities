@@ -1,0 +1,738 @@
+= Ubuntu Server Setup Script
+:toc: left
+:toclevels: 3
+:sectnums:
+:sectnumlevels: 4
+:icons: font
+:source-highlighter: rouge
+:imagesdir: images
+:doctype: article
+
+== Overview
+
+The Ubuntu Server Setup Script is a comprehensive, production-ready automation tool designed to transform a fresh Ubuntu server installation into a secure, hardened, and fully-configured system. It provides enterprise-grade security features, container orchestration, intrusion prevention, and SSL certificate management with minimal user intervention.
+
+[.lead]
+*Features:* Docker CE • k3s (Secured Kubernetes) • SSHGuard • Fail2Ban • Certbot • UFW Firewall • SSH Hardening • Unattended Upgrades
+
+== Table of Contents
+
+. <<overview>>
+. <<quick-start>>  
+. <<features>>
+. <<installation>>
+. <<usage>>
+. <<configuration>>
+. <<security>>
+. <<troubleshooting>>
+. <<related-scripts>>
+. <<technical-details>>
+. <<license>>
+
+== Quick Start
+
+[source,bash]
+----
+# Download and make executable
+chmod +x ubuntu-server-setup.sh
+
+# Interactive setup (recommended)
+sudo ./ubuntu-server-setup.sh
+
+# Non-interactive setup with defaults
+sudo ./ubuntu-server-setup.sh --yes
+
+# Preview what would be installed
+sudo ./ubuntu-server-setup.sh --dry-run
+----
+
+IMPORTANT: This script must be run as root (using `sudo`) and requires Ubuntu 20.04 or newer.
+
+== Features
+
+=== Core Services
+
+==== 1. Container Runtime
+* **Docker CE** - Latest Docker Community Edition
+* Automatic daemon configuration
+* User group management
+* Service auto-start configuration
+
+==== 2. Kubernetes Distribution  
+* **k3s** - Lightweight Kubernetes distribution
+* **Security Hardening:**
+  - Pod Security Policies (PSP)
+  - Network Security Policies
+  - Admission Controllers (NodeRestriction, ResourceQuota)
+  - Audit logging with structured format
+  - RBAC enforcement
+  - Encrypted secrets at rest
+
+==== 3. Intrusion Prevention
+* **Fail2Ban** - Advanced intrusion prevention system
+  - SSH brute-force protection
+  - HTTP/HTTPS attack mitigation
+  - Custom jail configurations
+  - Email notifications
+* **SSHGuard** - Real-time SSH attack detection
+  - UFW firewall integration
+  - Automatic IP blocking
+  - Whitelist support
+
+==== 4. SSL Certificate Management
+* **Certbot** - Let's Encrypt SSL certificates
+* Automatic certificate renewal
+* Multiple domain support
+* Nginx/Apache integration ready
+
+==== 5. System Security
+* **UFW (Uncomplicated Firewall)** - Simplified iptables management
+* **SSH Hardening** - Industry-standard security practices
+* **Unattended Upgrades** - Automatic security updates
+
+=== Security Features
+
+==== Port Obfuscation
+* Custom port assignment for all services
+* Non-standard ports to reduce attack surface
+* Configurable port ranges
+* Automatic conflict detection
+
+==== SSH Hardening
+* Key-only authentication (password auth disabled)
+* Root login disabled
+* Custom SSH port assignment
+* Protocol version enforcement
+* Connection rate limiting
+
+==== Firewall Configuration
+* Minimal attack surface (only required ports open)
+* Service-specific rule sets
+* Geographic IP blocking capabilities
+* DDoS protection rules
+
+==== System Hardening
+* Kernel parameter tuning
+* File system permissions
+* Service isolation
+* Resource limitations
+
+=== Monitoring and Logging
+
+==== Comprehensive Logging
+* Centralized log management (`/var/log/ubuntu-server-setup.log`)
+* Structured error reporting
+* System state validation
+* Installation progress tracking
+
+==== Error Handling
+* Detailed error reports (`.ubuntu-server-setup.error`)
+* Debug information collection (`.ubuntu-server-setup.debug`)
+* Automatic cleanup on failures
+* System state restoration
+
+==== Reporting
+* Post-installation system reports
+* Service status validation
+* Security configuration summary
+* Port mapping documentation
+
+== Installation
+
+=== Prerequisites
+
+* Ubuntu 20.04 LTS or newer
+* Minimum 2GB RAM (4GB recommended)
+* Minimum 10GB free disk space
+* Active internet connection
+* Root/sudo access
+
+=== System Requirements
+
+[cols="2,3,2"]
+|===
+|Component |Minimum |Recommended
+
+|Memory |2GB |4GB+
+|Disk Space |10GB free |20GB+ free  
+|CPU Cores |1 |2+
+|Network |100Mbps |1Gbps+
+|===
+
+=== Download and Setup
+
+[source,bash]
+----
+# Clone the repository
+git clone https://github.com/JCTRoth/Shell_Script_Utilities.git
+cd Shell_Script_Utilities/Container
+
+# Make script executable
+chmod +x ubuntu-server-setup.sh
+
+# Verify script integrity
+bash -n ubuntu-server-setup.sh
+----
+
+== Usage
+
+=== Command Line Options
+
+[source,bash]
+----
+ubuntu-server-setup.sh [OPTIONS]
+----
+
+==== Available Options
+
+[cols="2,1,4"]
+|===
+|Option |Type |Description
+
+|`-h, --help` |Flag |Show help message and exit
+|`-v, --version` |Flag |Display script version
+|`-y, --yes` |Flag |Auto-confirm all prompts (non-interactive mode)
+|`-n, --dry-run` |Flag |Preview changes without making modifications
+|`-r, --report-only` |Flag |Generate system report without installing
+|`--verbose` |Flag |Enable detailed output logging
+|`--ssh-key <key>` |Parameter |SSH public key for authentication setup
+|===
+
+=== Usage Examples
+
+==== Interactive Installation
+[source,bash]
+----
+sudo ./ubuntu-server-setup.sh
+----
+The script will guide you through:
+
+1. **Port Configuration** - Custom port assignment for services
+2. **SSL Setup** - Domain and email configuration for certificates  
+3. **SSH Key Management** - Public key installation for secure access
+4. **Service Selection** - Choose which components to install
+
+==== Non-Interactive Installation
+[source,bash]
+----
+sudo ./ubuntu-server-setup.sh --yes
+----
+Uses default settings for all configurations.
+
+==== Preview Mode (Dry Run)
+[source,bash]
+----
+sudo ./ubuntu-server-setup.sh --dry-run
+----
+Shows what would be installed/configured without making changes.
+
+==== Report Generation
+[source,bash]
+----
+sudo ./ubuntu-server-setup.sh --report-only
+----
+Generates comprehensive system report (requires previous installation).
+
+==== SSH Key Integration
+[source,bash]
+----
+sudo ./ubuntu-server-setup.sh --ssh-key "ssh-rsa AAAAB3NzaC1yc2E... user@hostname"
+----
+
+=== Installation Wizard
+
+The interactive wizard guides you through:
+
+1. **Welcome and System Check**
+   - Root permission verification
+   - Ubuntu version validation  
+   - System requirements check
+
+2. **Port Configuration**
+   - SSH port assignment (default: 2222)
+   - k3s API port (default: 6443)
+   - Custom port ranges
+   - Conflict detection
+
+3. **SSL Certificate Setup**
+   - Domain name configuration
+   - Email for Let's Encrypt notifications
+   - Certificate type selection
+
+4. **SSH Security Setup**
+   - Public key installation
+   - SSH hardening options
+   - Authentication method selection
+
+5. **Service Configuration Review**
+   - Component selection confirmation
+   - Configuration summary
+   - Final installation approval
+
+== Configuration
+
+=== Port Configuration
+
+The script uses a configuration file (`/etc/server-ports.conf`) to manage port assignments:
+
+[source,bash]
+----
+# Server Port Configuration
+SSH_PORT=2222
+K3S_API_PORT=6443
+DOCKER_PORT=2376
+CERTBOT_HTTP_PORT=80
+CERTBOT_HTTPS_PORT=443
+----
+
+==== Port Ranges
+* SSH: 1024-65535 (avoiding well-known ports)
+* k3s API: 6443-6453 (Kubernetes standard range)
+* Docker: 2376-2386 (Docker TLS range)
+
+=== Service Configuration
+
+==== Docker Configuration
+Location: `/etc/docker/daemon.json`
+
+[source,json]
+----
+{
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "10m",
+    "max-file": "3"
+  },
+  "storage-driver": "overlay2",
+  "exec-opts": ["native.cgroupdriver=systemd"]
+}
+----
+
+==== k3s Configuration
+Location: `/etc/systemd/system/k3s.service.d/override.conf`
+
+[source,ini]
+----
+[Service]
+ExecStart=
+ExecStart=/usr/local/bin/k3s server \
+  --kube-apiserver-arg=audit-log-path=/var/log/k3s-audit.log \
+  --kube-apiserver-arg=audit-policy-file=/var/lib/rancher/k3s/server/audit-policy.yaml \
+  --kube-apiserver-arg=enable-admission-plugins=NodeRestriction,ResourceQuota \
+  --https-listen-port=${K3S_API_PORT}
+----
+
+==== Fail2Ban Configuration
+Location: `/etc/fail2ban/jail.local`
+
+[source,ini]
+----
+[sshd]
+enabled = true
+port = ${SSH_PORT}
+filter = sshd
+logpath = /var/log/auth.log
+maxretry = 3
+bantime = 3600
+findtime = 600
+----
+
+=== Environment Variables
+
+[cols="2,1,3"]
+|===
+|Variable |Default |Description
+
+|`SCRIPT_NAME` |`ubuntu-server-setup.sh` |Script filename
+|`SCRIPT_VERSION` |`1.0` |Current script version
+|`LOG_FILE` |`/var/log/ubuntu-server-setup.log` |Primary log file location
+|`ERROR_FILE` |`.ubuntu-server-setup.error` |Error report file
+|`DEBUG_FILE` |`.ubuntu-server-setup.debug` |Debug information file
+|===
+
+== Security
+
+=== Security Model
+
+The script implements a **defense-in-depth** security model with multiple layers:
+
+1. **Network Security** (UFW Firewall + Port Obfuscation)
+2. **Access Control** (SSH Hardening + Key-based Auth)
+3. **Intrusion Prevention** (Fail2Ban + SSHGuard)
+4. **Container Security** (k3s Hardening + PSP)
+5. **System Security** (Kernel Hardening + Updates)
+
+=== SSH Hardening Checklist
+
+[cols="1,3,1"]
+|===
+|Item |Configuration |Status
+
+|Password Authentication |Disabled |✓
+|Root Login |Disabled |✓
+|Protocol Version |SSH-2 Only |✓
+|Port |Custom (Non-22) |✓
+|Key Authentication |RSA/ED25519 |✓
+|Connection Rate Limiting |MaxAuthTries=3 |✓
+|===
+
+=== Firewall Rules
+
+==== Default Policy
+* **Incoming**: DENY (whitelist approach)
+* **Outgoing**: ALLOW (with monitoring)
+* **Routed**: DENY
+
+==== Open Ports
+[cols="1,2,2"]
+|===
+|Port |Service |Access
+
+|Custom SSH |SSH Server |Admin only
+|80 |HTTP (Certbot) |Public (temporary)
+|443 |HTTPS |Public
+|Custom k3s |Kubernetes API |Cluster only
+|===
+
+=== Certificate Management
+
+==== Let's Encrypt Integration
+* Automatic certificate generation
+* 90-day renewal automation
+* Multi-domain support (SAN certificates)
+* HTTP-01 and DNS-01 challenge support
+
+==== Certificate Storage
+* Location: `/etc/letsencrypt/live/`
+* Backup: Automatic to `/etc/letsencrypt/archive/`
+* Permissions: Root only (600)
+
+=== Monitoring and Alerting
+
+==== Log Monitoring
+* **Auth Logs**: `/var/log/auth.log` (SSH attempts)
+* **System Logs**: `/var/log/syslog` (system events)
+* **Application Logs**: `/var/log/ubuntu-server-setup.log` (script events)
+
+==== Fail2Ban Monitoring
+* Real-time IP blocking
+* Email notifications (configurable)
+* Whitelist management
+* Automatic unban after timeout
+
+== Troubleshooting
+
+=== Common Issues
+
+==== Script Fails to Start
+[source,bash]
+----
+# Check script permissions
+ls -la ubuntu-server-setup.sh
+
+# Verify syntax
+bash -n ubuntu-server-setup.sh
+
+# Check system requirements
+df -h /
+free -h
+----
+
+==== Port Conflicts
+[source,bash]
+----
+# Check port usage
+ss -tuln | grep :2222
+
+# Find process using port  
+lsof -i :2222
+
+# Kill conflicting process
+sudo systemctl stop <service>
+----
+
+==== Service Startup Issues
+[source,bash]
+----
+# Check service status
+systemctl status docker k3s sshguard fail2ban
+
+# View service logs
+journalctl -u docker -f
+journalctl -u k3s -f
+----
+
+==== SSL Certificate Issues
+[source,bash]
+----
+# Test certificate renewal
+sudo certbot renew --dry-run
+
+# Check certificate status
+sudo certbot certificates
+
+# Manual certificate generation
+sudo certbot certonly --standalone -d yourdomain.com
+----
+
+=== Error Recovery
+
+==== Automatic Recovery
+The script includes comprehensive error handling:
+
+* **Error Detection**: Traps all errors with detailed reporting
+* **State Validation**: Pre and post-installation checks
+* **Automatic Cleanup**: Removes partial installations on failure
+* **Service Recovery**: Restores services to known-good states
+
+==== Manual Recovery
+If automatic recovery fails:
+
+[source,bash]
+----
+# Check error files
+cat .ubuntu-server-setup.error
+cat .ubuntu-server-setup.debug
+
+# Reset services
+sudo systemctl stop docker k3s sshguard fail2ban
+sudo systemctl reset-failed
+
+# Reset firewall
+sudo ufw --force reset
+sudo ufw enable
+
+# Remove k3s completely
+sudo /usr/local/bin/k3s-uninstall.sh
+----
+
+=== Debug Mode
+
+Enable verbose logging for troubleshooting:
+
+[source,bash]
+----
+sudo ./ubuntu-server-setup.sh --verbose --dry-run
+----
+
+This provides:
+* Detailed command execution logs
+* System state information
+* Configuration file contents
+* Service status details
+
+=== Log Analysis
+
+==== Primary Log File
+[source,bash]
+----
+# View installation log
+tail -f /var/log/ubuntu-server-setup.log
+
+# Search for errors
+grep "ERROR" /var/log/ubuntu-server-setup.log
+
+# Filter by timestamp
+grep "2025-12-14" /var/log/ubuntu-server-setup.log
+----
+
+==== Error Report Analysis
+[source,bash]
+----
+# View latest error report
+cat .ubuntu-server-setup.error
+
+# Check system state at time of error
+cat .ubuntu-server-setup.debug
+----
+
+== Related Scripts
+
+=== Container Management Scripts
+
+The `Container/` directory includes additional Docker and Kubernetes management utilities:
+
+==== Docker Utilities
+* **`Docker/remove_dengling_images.sh`** - Cleanup unused Docker images
+* **`Docker/stop_and_remove_all.sh`** - Complete Docker environment reset
+
+==== Kubernetes Utilities  
+* **`Kubernetes/delete_all_pods.sh`** - Emergency pod cleanup for k3s
+
+=== System Administration Scripts
+
+==== Backup and Restore
+* **`Backup_Tools/Backup_and_Restore_Sources/`** - Package source management
+* **`Backup_Tools/Backup_Folder/`** - Filesystem backup utilities
+
+==== Package Management
+* **`List_Installation/`** - Advanced package list management system
+* **`Program_Setups/`** - Automated program installation scripts
+
+==== System Monitoring
+* **`Generate_System_Logs/`** - Comprehensive system reporting
+* **`System_Configurations/`** - System optimization scripts
+
+==== Security Tools
+* **`Other_Systems/Android/adb_bloatware_remover/`** - Android device security
+* **`rulesD_Problems/`** - udev rules and hardware access fixes
+
+=== Integration Examples
+
+==== Backup Before Installation
+[source,bash]
+----
+# Backup package sources
+cd ../Backup_Tools/Backup_and_Restore_Sources
+sudo ./Backup_Source_and_Key.sh
+
+# Run server setup
+cd ../../Container  
+sudo ./ubuntu-server-setup.sh
+----
+
+==== Post-Installation Package Management
+[source,bash]
+----
+# Install additional development tools
+cd ../List_Installation
+sudo ./install_list.sh lists/developer.list
+
+# Add custom packages
+sudo ./add_pack.sh lists/server.list
+----
+
+==== System Monitoring Setup
+[source,bash]
+----
+# Generate baseline system report
+cd ../Generate_System_Logs
+sudo ./Generate_Compact_System_Status.sh
+
+# Configure system optimizations
+cd ../System_Configurations
+sudo ./configure-unattended-upgrades/configure-unattended-upgrades.sh
+----
+
+== Technical Details
+
+=== Architecture
+
+==== Script Structure
+[source]
+----
+ubuntu-server-setup.sh
+├── Constants and Configuration
+├── Error Handling & Logging  
+├── Utility Functions
+├── System Validation
+├── Package Management
+├── Service Installation
+│   ├── Docker CE Setup
+│   ├── k3s Installation & Hardening
+│   ├── Fail2Ban Configuration
+│   ├── SSHGuard Setup
+│   ├── UFW Firewall Setup
+│   └── SSL Certificate Management
+├── SSH Hardening
+├── System Configuration
+└── Reporting and Validation
+----
+
+==== Dependencies
+
+===== Required Packages
+[cols="2,1,3"]
+|===
+|Package |Type |Purpose
+
+|`curl` |System |Package downloads
+|`wget` |System |File retrieval
+|`apt-transport-https` |System |Secure package sources
+|`ca-certificates` |System |SSL certificate validation
+|`gnupg` |System |Package signature verification
+|`lsb-release` |System |Distribution detection
+|===
+
+===== Installed Services
+[cols="2,1,2,2"]  
+|===
+|Service |Port |Purpose |Dependencies
+
+|Docker CE |2376 |Container Runtime |containerd, runc
+|k3s |6443 |Kubernetes |containerd, CNI plugins
+|Fail2Ban |N/A |Intrusion Prevention |iptables, systemd
+|SSHGuard |N/A |SSH Protection |ufw, iptables
+|UFW |N/A |Firewall |iptables, netfilter
+|Certbot |80/443 |SSL Certificates |python3, nginx/apache
+|===
+
+=== File System Layout
+
+==== Configuration Files
+[source]
+----
+/etc/
+├── server-ports.conf              # Port configuration
+├── docker/daemon.json             # Docker configuration  
+├── fail2ban/jail.local            # Fail2Ban rules
+├── ssh/sshd_config               # SSH hardening
+├── ufw/                          # Firewall rules
+├── letsencrypt/                  # SSL certificates
+└── systemd/system/
+    ├── k3s.service               # k3s service
+    └── k3s.service.d/override.conf
+----
+
+==== Log Files
+[source]
+----
+/var/log/
+├── ubuntu-server-setup.log       # Installation log
+├── k3s-audit.log                 # k3s audit events
+├── fail2ban.log                  # Intrusion attempts
+├── auth.log                      # SSH authentication
+└── ufw.log                       # Firewall events
+----
+
+==== Runtime Files
+[source]
+----
+/var/lib/
+├── rancher/k3s/                  # k3s data directory
+├── docker/                       # Docker runtime data
+└── fail2ban/                     # Fail2Ban state
+----
+
+=== Performance Considerations
+
+==== Resource Usage
+[cols="2,1,1,2"]
+|===
+|Service |Memory |CPU |Disk
+
+|Docker |~100MB |Low |Variable
+|k3s |~512MB |Medium |~1GB  
+|Fail2Ban |~50MB |Low |~10MB
+|SSHGuard |~20MB |Low |~5MB
+|UFW |~10MB |Low |~1MB
+|===
+
+==== Optimization Settings
+* **Docker**: Overlay2 storage driver, log rotation
+* **k3s**: Embedded etcd, minimal components  
+* **Fail2Ban**: Optimized regex patterns, reasonable ban times
+* **System**: Kernel parameter tuning, service hardening
+
+=== Security Considerations
+
+==== Attack Surface Reduction
+1. **Minimal Service Exposure**: Only required ports open
+2. **Non-Standard Ports**: Reduces automated scanning success
+3. **Rate Limiting**: Connection throttling and attempt limits
+4. **Intrusion Detection**: Real-time monitoring and response
+
+==== Compliance Features
+* **CIS Benchmarks**: Kubernetes and Docker hardening
+* **NIST Guidelines**: SSH and system security standards  
+* **Industry Best Practices**: Firewall and monitoring setup
