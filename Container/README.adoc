@@ -13,7 +13,7 @@
 The Ubuntu Server Setup Script is a comprehensive, production-ready automation tool designed to transform a fresh Ubuntu server installation into a secure, hardened, and fully-configured system. It provides enterprise-grade security features, container orchestration, intrusion prevention, and SSL certificate management with minimal user intervention.
 
 [.lead]
-*Features:* Docker CE • k3s (Secured Kubernetes) • SSHGuard • Fail2Ban • Certbot • UFW Firewall • SSH Hardening • Unattended Upgrades
+*Features:* Docker CE • k3s/Swarm (User Choice) • SSHGuard • Fail2Ban • Certbot • UFW Firewall • SSH Hardening • Admin User Security • Unattended Upgrades
 
 == Table of Contents
 
@@ -39,14 +39,20 @@ chmod +x ubuntu-server-setup.sh
 # Interactive setup (recommended)
 sudo ./ubuntu-server-setup.sh
 
-# Non-interactive setup with defaults
-sudo ./ubuntu-server-setup.sh --yes
+# Non-interactive setup with admin user
+sudo ./ubuntu-server-setup.sh --yes --admin-user containeruser --admin-key "ssh-ed25519 AAAA..."
 
 # Preview what would be installed
 sudo ./ubuntu-server-setup.sh --dry-run
 ----
 
 IMPORTANT: This script must be run as root (using `sudo`) and requires Ubuntu 20.04 or newer.
+
+WARNING: **CRITICAL SECURITY WARNING** - This script DISABLES direct root SSH login! You MUST have SSH keys ready. Without them, you will be **LOCKED OUT** of your server!
+
+* **Interactive mode**: Will prompt for SSH key during setup
+* **Auto mode**: Requires `--admin-user` and `--admin-key` parameters
+* **No SSH keys**: Server becomes inaccessible - recovery requires console access!
 
 == Features
 
@@ -58,10 +64,11 @@ IMPORTANT: This script must be run as root (using `sudo`) and requires Ubuntu 20
 * User group management
 * Service auto-start configuration
 
-==== 2. Kubernetes Distribution  
-* **k3s** - Lightweight Kubernetes distribution
+==== 2. Container Orchestration
+* **k3s** - Lightweight Kubernetes distribution (recommended)
+* **Docker Swarm** - Simple multi-node clustering
 * **Security Hardening:**
-  - Pod Security Policies (PSP)
+  - Pod Security Policies (PSP) for k3s
   - Network Security Policies
   - Admission Controllers (NodeRestriction, ResourceQuota)
   - Audit logging with structured format
@@ -100,7 +107,9 @@ IMPORTANT: This script must be run as root (using `sudo`) and requires Ubuntu 20
 
 ==== SSH Hardening
 * Key-only authentication (password auth disabled)
-* Root login disabled
+* **Root SSH login DISABLED** (PermitRootLogin no)
+* Non-root admin user with sudo access required
+* Optional recovery admin account for failsafe access
 * Custom SSH port assignment
 * Protocol version enforcement
 * Connection rate limiting
@@ -195,7 +204,10 @@ ubuntu-server-setup.sh [OPTIONS]
 |`-n, --dry-run` |Flag |Preview changes without making modifications
 |`-r, --report-only` |Flag |Generate system report without installing
 |`--verbose` |Flag |Enable detailed output logging
-|`--ssh-key <key>` |Parameter |SSH public key for authentication setup
+|`--admin-user <username>` |Parameter |Admin username for SSH access (required in auto mode)
+|`--admin-key <key>` |Parameter |SSH public key for admin user (required in auto mode)
+|`--recovery-key <key>` |Parameter |SSH public key for recovery admin (optional)
+|`--ssh-key <key>` |Parameter |DEPRECATED: Use `--admin-key` instead
 |===
 
 === Usage Examples
@@ -207,17 +219,28 @@ sudo ./ubuntu-server-setup.sh
 ----
 The script will guide you through:
 
-1. **Port Configuration** - Custom port assignment for services
-2. **SSL Setup** - Domain and email configuration for certificates  
-3. **SSH Key Management** - Public key installation for secure access
-4. **Service Selection** - Choose which components to install
+1. **Admin User Setup** - Create non-root admin with sudo access
+2. **Orchestrator Choice** - Select k3s Kubernetes or Docker Swarm
+3. **Port Configuration** - Custom port assignment for services
+4. **SSL Setup** - Domain and email configuration for certificates  
+5. **SSH Key Management** - Public key installation for admin user
+6. **Recovery Admin** - Optional failsafe admin account
 
 ==== Non-Interactive Installation
 [source,bash]
 ----
-sudo ./ubuntu-server-setup.sh --yes
+sudo ./ubuntu-server-setup.sh --yes --admin-user containeruser --admin-key "ssh-ed25519 AAAA..."
 ----
-Uses default settings for all configurations.
+Uses default settings but requires admin user and SSH key.
+
+==== Full Automated Setup with Recovery Admin
+[source,bash]
+----
+sudo ./ubuntu-server-setup.sh --yes \
+    --admin-user containeruser \
+    --admin-key "ssh-ed25519 AAAA... primary@host" \
+    --recovery-key "ssh-rsa BBBB... recovery@vault"
+----
 
 ==== Preview Mode (Dry Run)
 [source,bash]
@@ -233,12 +256,6 @@ sudo ./ubuntu-server-setup.sh --report-only
 ----
 Generates comprehensive system report (requires previous installation).
 
-==== SSH Key Integration
-[source,bash]
-----
-sudo ./ubuntu-server-setup.sh --ssh-key "ssh-rsa AAAAB3NzaC1yc2E... user@hostname"
-----
-
 === Installation Wizard
 
 The interactive wizard guides you through:
@@ -248,23 +265,27 @@ The interactive wizard guides you through:
    - Ubuntu version validation  
    - System requirements check
 
-2. **Port Configuration**
+2. **Admin User Configuration**
+   - Username selection (non-root)
+   - SSH key installation
+   - Optional recovery admin setup
+
+3. **Orchestrator Selection**
+   - k3s (Lightweight Kubernetes) - Recommended
+   - Docker Swarm - Simpler multi-node clustering
+
+4. **Port Configuration**
    - SSH port assignment (default: 2222)
    - k3s API port (default: 6443)
    - Custom port ranges
    - Conflict detection
 
-3. **SSL Certificate Setup**
+5. **SSL Certificate Setup**
    - Domain name configuration
    - Email for Let's Encrypt notifications
    - Certificate type selection
 
-4. **SSH Security Setup**
-   - Public key installation
-   - SSH hardening options
-   - Authentication method selection
-
-5. **Service Configuration Review**
+6. **Service Configuration Review**
    - Component selection confirmation
    - Configuration summary
    - Final installation approval
@@ -356,11 +377,67 @@ findtime = 600
 
 The script implements a **defense-in-depth** security model with multiple layers:
 
-1. **Network Security** (UFW Firewall + Port Obfuscation)
-2. **Access Control** (SSH Hardening + Key-based Auth)
-3. **Intrusion Prevention** (Fail2Ban + SSHGuard)
-4. **Container Security** (k3s Hardening + PSP)
-5. **System Security** (Kernel Hardening + Updates)
+1. **Root Access Isolation** (No direct root SSH - sudo elevation only)
+2. **Network Security** (UFW Firewall + Port Obfuscation)
+3. **Access Control** (SSH Hardening + Key-based Auth)
+4. **Intrusion Prevention** (Fail2Ban + SSHGuard)
+5. **Container Security** (k3s Hardening + PSP)
+6. **System Security** (Kernel Hardening + Updates)
+
+=== Root Access Security
+
+IMPORTANT: Direct root SSH login is **DISABLED** (`PermitRootLogin no`).
+
+==== Security Model
+
+[source]
+----
+┌──────────────────────────────────────────────────────────┐
+│                    SSH CONNECTION                        │
+│                    (Key-based only)                      │
+└────────────────────────┬─────────────────────────────────┘
+                         │
+                         ▼
+┌──────────────────────────────────────────────────────────┐
+│                    ADMIN USER                            │
+│                 (e.g., containeruser)                    │
+│              - Container management                      │
+│              - System monitoring                         │
+│              - Limited user operations                   │
+└────────────────────────┬─────────────────────────────────┘
+                         │
+                         ▼ sudo -i / sudo <command>
+┌──────────────────────────────────────────────────────────┐
+│                    ROOT ACCESS                           │
+│              (Via sudo elevation only)                   │
+│              - System administration                     │
+│              - Security configuration                    │
+│              - Service management                        │
+└──────────────────────────────────────────────────────────┘
+----
+
+==== Access Methods
+[source,bash]
+----
+# Connect as admin user
+ssh -p <SSH_PORT> admin_username@server_ip
+
+# Run single command as root
+sudo apt update
+
+# Get full root shell
+sudo -i
+
+# Switch to root (alternative)
+sudo su -
+----
+
+==== Recovery Admin Account
+An optional secondary admin account provides failsafe access if the primary admin account is compromised or SSH key is lost.
+
+* Uses a **different SSH key** stored securely offline
+* Same sudo privileges as primary admin
+* Should only be used for recovery scenarios
 
 === SSH Hardening Checklist
 
@@ -369,7 +446,7 @@ The script implements a **defense-in-depth** security model with multiple layers
 |Item |Configuration |Status
 
 |Password Authentication |Disabled |✓
-|Root Login |Disabled |✓
+|Root Login |**Disabled** (PermitRootLogin no) |✓
 |Protocol Version |SSH-2 Only |✓
 |Port |Custom (Non-22) |✓
 |Key Authentication |RSA/ED25519 |✓
@@ -476,6 +553,48 @@ sudo certbot certonly --standalone -d yourdomain.com
 ----
 
 === Error Recovery
+
+==== SSH Lockout Recovery
+
+IMPORTANT: If you lose SSH access, use one of these recovery methods:
+
+**Option 1: Recovery Admin Account**
+[source,bash]
+----
+# If recovery admin was configured during setup
+ssh -p <SSH_PORT> recovery_admin@server_ip
+sudo -i
+----
+
+**Option 2: Console Access**
+[source,bash]
+----
+# Access server via physical console, KVM, or cloud provider console
+# Then temporarily re-enable root login:
+
+sudo nano /etc/ssh/sshd_config
+# Change: PermitRootLogin no
+# To:     PermitRootLogin yes
+sudo systemctl restart sshd
+
+# After fixing the issue, disable root login again:
+sudo nano /etc/ssh/sshd_config
+# Change: PermitRootLogin yes
+# To:     PermitRootLogin no
+sudo systemctl restart sshd
+----
+
+**Option 3: Single User Mode (Physical Access)**
+[source,bash]
+----
+# Boot into recovery mode
+# Mount filesystem read-write
+mount -o remount,rw /
+# Edit sshd_config as needed
+nano /etc/ssh/sshd_config
+# Reboot
+reboot
+----
 
 ==== Automatic Recovery
 The script includes comprehensive error handling:

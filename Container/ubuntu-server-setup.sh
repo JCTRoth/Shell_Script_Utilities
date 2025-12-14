@@ -35,68 +35,6 @@ run_cmd() {
     log "SUCCESS: Command completed: ${description:-$cmd}"
 }
 
-# Function to validate system state
-validate_system_state() {
-    local check_type="$1"
-
-    case "$check_type" in
-        "pre_install")
-            log "Validating system state before installation"
-
-            # Check disk space (need at least 5GB free)
-            local free_space
-            free_space=$(df / | tail -1 | awk '{print $4}')
-            if [[ $free_space -lt 5242880 ]]; then  # 5GB in KB
-                print_error "Insufficient disk space. Need at least 5GB free."
-                return 1
-            fi
-
-            # Check memory (need at least 1GB)
-            local total_mem
-            total_mem=$(free -m | grep '^Mem:' | awk '{print $2}')
-            if [[ $total_mem -lt 1024 ]]; then
-                print_error "Insufficient memory. Need at least 1GB RAM."
-                return 1
-            fi
-
-            # Check if required ports are available
-            for port in "${PORT_MAP[@]}"; do
-                if ss -tuln | grep -q ":${port} "; then
-                    print_error "Port $port is already in use"
-                    return 1
-                fi
-            done
-            ;;
-
-        "post_install")
-            log "Validating system state after installation"
-
-            # Check if critical services are running
-            local critical_services=("sshd" "docker" "k3s" "ufw")
-            for service in "${critical_services[@]}"; do
-                if ! systemctl is-active --quiet "$service" 2>/dev/null; then
-                    print_warning "Service $service is not running"
-                fi
-            done
-
-            # Verify SSH is accessible on new port
-            local ssh_port="${PORT_MAP[ssh]}"
-            if ! ss -tuln | grep -q ":${ssh_port} "; then
-                print_error "SSH is not listening on port $ssh_port"
-                return 1
-            fi
-            ;;
-
-        *)
-            print_error "Unknown validation type: $check_type"
-            return 1
-            ;;
-    esac
-
-    log "System validation passed: $check_type"
-    return 0
-}
-
 readonly SCRIPT_NAME="$(basename "$0")"
 readonly SCRIPT_VERSION="1.0"
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -136,6 +74,13 @@ SSH_PUBLIC_KEY=""
 CERTBOT_EMAIL=""
 CERTBOT_DOMAIN=""
 CERTBOT_SETUP=false
+ORCHESTRATOR_CHOICE="k3s"  # Options: k3s, swarm
+
+# Admin user configuration (enhanced security - no direct root SSH)
+ADMIN_USERNAME=""
+ADMIN_SSH_KEY=""
+RECOVERY_ADMIN_USERNAME="recovery_admin"
+RECOVERY_ADMIN_SSH_KEY=""
 
 # =============================================================================
 # ERROR HANDLING & LOGGING
@@ -316,12 +261,25 @@ validate_system_state() {
             log "Validating system state after installation"
 
             # Check if critical services are running
-            local critical_services=("sshd" "docker" "k3s" "ufw")
+            local critical_services=("sshd" "docker" "ufw")
+            
+            # Add orchestration service based on choice
+            if [[ "${ORCHESTRATOR_CHOICE:-k3s}" == "k3s" ]]; then
+                critical_services+=("k3s")
+            fi
+            
             for service in "${critical_services[@]}"; do
                 if ! systemctl is-active --quiet "$service" 2>/dev/null; then
                     print_warning "Service $service is not running"
                 fi
             done
+            
+            # Additional check for Docker Swarm
+            if [[ "${ORCHESTRATOR_CHOICE:-k3s}" == "swarm" ]]; then
+                if ! docker info --format '{{.Swarm.LocalNodeState}}' 2>/dev/null | grep -q "active"; then
+                    print_warning "Docker Swarm is not active"
+                fi
+            fi
 
             # Verify SSH is accessible on new port
             local ssh_port="${PORT_MAP[ssh]}"
@@ -360,7 +318,7 @@ print_success() {
 }
 
 print_warning() {
-    print_color "$YELLOW" "⚠ WARNING: $1"
+    print_color "$YELLOW" "         ⚠ WARNING: $1"
 }
 
 print_info() {
@@ -407,20 +365,23 @@ ${BOLD}USAGE:${NC}
     $SCRIPT_NAME [OPTIONS]
 
 ${BOLD}OPTIONS:${NC}
-    -h, --help          Show this help message and exit
-    -v, --version       Show version information and exit
-    -y, --yes           Auto-confirm all prompts (use default values)
-    -n, --dry-run       Show what would be done without making changes
-    -r, --report-only   Generate report without installing anything
-    --verbose           Enable verbose output
-    --ssh-key <key>     SSH public key to add for authentication
+    -h, --help               Show this help message and exit
+    -v, --version            Show version information and exit
+    -y, --yes                Auto-confirm all prompts (use default values)
+    -n, --dry-run            Show what would be done without making changes
+    -r, --report-only        Generate report without installing anything
+    --verbose                Enable verbose output
+    --admin-user <username>  Admin username for SSH access (required in auto mode)
+    --admin-key <key>        SSH public key for admin user (required in auto mode)
+    --recovery-key <key>     SSH public key for recovery admin (optional)
+    --ssh-key <key>          DEPRECATED: Use --admin-key instead
 
 ${BOLD}EXAMPLES:${NC}
     # Interactive setup
     sudo $SCRIPT_NAME
 
     # Non-interactive setup with defaults
-    sudo $SCRIPT_NAME --yes
+    sudo $SCRIPT_NAME --yes --admin-user containeruser --admin-key "ssh-ed25519 AAAA..."
 
     # Dry run to see what would be installed
     sudo $SCRIPT_NAME --dry-run
@@ -428,17 +389,24 @@ ${BOLD}EXAMPLES:${NC}
     # Generate report only
     sudo $SCRIPT_NAME --report-only
 
-    # Setup with SSH key
-    sudo $SCRIPT_NAME --ssh-key "ssh-rsa AAAA... user@host"
+    # Full automated setup with admin and recovery accounts
+    sudo $SCRIPT_NAME --yes --admin-user containeruser --admin-key "ssh-ed25519 AAAA..." --recovery-key "ssh-rsa BBBB..."
 
 ${BOLD}SERVICES INSTALLED:${NC}
     • Docker CE (Container runtime)
-    • k3s (Lightweight Kubernetes with security hardening)
+    • Container Orchestration (k3s Kubernetes OR Docker Swarm - your choice)
     • SSHGuard (Brute-force protection)
     • Fail2Ban (Intrusion prevention system)
     • Certbot (SSL certificates)
     • UFW (Uncomplicated Firewall)
     • Unattended Upgrades (Automatic security updates)
+    • htop (System monitoring)
+
+${BOLD}SECURITY MODEL:${NC}
+    • Direct root SSH login is DISABLED (PermitRootLogin no)
+    • Admin user required with SSH key authentication
+    • Root access via sudo elevation only
+    • Optional recovery admin for failsafe access
 
 ${BOLD}SECURITY FEATURES:${NC}
     • Custom port obfuscation for all services
@@ -546,8 +514,72 @@ setup_wizard() {
     if [[ "$AUTO_YES" == true ]]; then
         print_info "Auto-yes mode: Using default values for all prompts"
         CERTBOT_SETUP=false
+        ORCHESTRATOR_CHOICE="k3s"
+        if [[ -z "$ADMIN_USERNAME" ]]; then
+            print_error "Admin username required in auto-yes mode. Use --admin-user option."
+            exit 1
+        fi
         return
     fi
+    
+    # Admin User Configuration
+    echo ""
+    print_step "Admin User Configuration"
+    echo ""
+    print_error "⚠️  CRITICAL SECURITY WARNING ⚠️"
+    print_error "Direct root SSH login will be DISABLED after setup!"
+    print_error "You MUST have SSH keys ready - no password access will be possible!"
+    echo ""
+    print_warning "SECURITY: Direct root SSH login will be DISABLED!"
+    print_info "You need to create a non-root admin user for server management."
+    print_info "This user will have sudo access for elevated operations."
+    print_info "SSH key authentication is REQUIRED - prepare your public key now."
+    echo ""
+    
+    while true; do
+        read -r -p "$(echo -e "${CYAN}Enter admin username: ${NC}")" admin_name
+        if [[ -z "$admin_name" ]]; then
+            print_warning "Admin username is required."
+        elif [[ "$admin_name" == "root" ]]; then
+            print_warning "Cannot use 'root' as admin username. Choose a different name."
+        elif [[ ! "$admin_name" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
+            print_warning "Invalid username. Use lowercase letters, numbers, underscore, or hyphen."
+        elif [[ ${#admin_name} -gt 32 ]]; then
+            print_warning "Username too long. Maximum 32 characters."
+        else
+            ADMIN_USERNAME="$admin_name"
+            print_success "Admin username set: $ADMIN_USERNAME"
+            break
+        fi
+    done
+    
+    # Orchestrator Choice
+    echo ""
+    print_step "Container Orchestration Platform"
+    echo ""
+    print_info "Choose your container orchestration platform:"
+    print_info "1) k3s (Lightweight Kubernetes) - Recommended for production"
+    print_info "2) Docker Swarm - Simple multi-node clustering"
+    echo ""
+    
+    while true; do
+        read -r -p "$(echo -e "${CYAN}Select orchestration platform [1-2] (default: 1): ${NC}")" orchestrator_choice
+        case "${orchestrator_choice:-1}" in
+            1|k3s|kubernetes)
+                ORCHESTRATOR_CHOICE="k3s"
+                print_success "Selected: k3s (Lightweight Kubernetes)"
+                break
+                ;;
+            2|swarm|docker-swarm)
+                ORCHESTRATOR_CHOICE="swarm"
+                print_success "Selected: Docker Swarm"
+                break
+                ;;
+            *)
+                print_warning "Invalid choice. Please select 1 or 2."
+                ;;
+        esac
+    done
     
     # Certbot Configuration
     echo ""
@@ -727,55 +759,211 @@ load_port_config() {
 # =============================================================================
 
 setup_ssh_key() {
+    # Note: Primary SSH key setup is now handled in setup_admin_user()
+    # This function preserves any existing root SSH keys for migration purposes
+    # but root login will be disabled via PermitRootLogin no
+    
     local ssh_dir="/root/.ssh"
     local auth_keys="$ssh_dir/authorized_keys"
     
-    print_step "Setting up SSH key authentication..."
+    print_step "Checking existing root SSH configuration..."
     
     if [[ "$DRY_RUN" == true ]]; then
-        print_info "[DRY-RUN] Would configure SSH keys"
+        print_info "[DRY-RUN] Would check for existing root SSH keys"
         return
     fi
     
-    # Create .ssh directory if it doesn't exist
+    # Ensure .ssh directory exists (for existing keys)
+    if [[ -d "$ssh_dir" ]]; then
+        chmod 700 "$ssh_dir"
+    fi
+    
+    # Preserve existing keys but warn that root login is disabled
+    if [[ -f "$auth_keys" ]] && [[ -s "$auth_keys" ]]; then
+        chmod 600 "$auth_keys"
+        print_warning "Existing root SSH keys found. Note: Direct root SSH login will be DISABLED."
+        print_info "Use the admin user ($ADMIN_USERNAME) and 'sudo -i' for root access."
+    fi
+    
+    log "Root SSH key check completed - root login will be disabled"
+}
+
+# =============================================================================
+# ADMIN USER SETUP FUNCTIONS
+# =============================================================================
+
+setup_admin_user() {
+    print_header "ADMIN USER SETUP"
+    
+    if [[ -z "$ADMIN_USERNAME" ]]; then
+        print_error "Admin username not configured!"
+        exit 1
+    fi
+    
+    local admin_user="$ADMIN_USERNAME"
+    local ssh_dir="/home/$admin_user/.ssh"
+    local auth_keys="$ssh_dir/authorized_keys"
+    
+    print_step "Creating container admin user: $admin_user"
+    
+    if [[ "$DRY_RUN" == true ]]; then
+        print_info "[DRY-RUN] Would create admin user: $admin_user"
+        print_info "[DRY-RUN] Would add user to docker group"
+        print_info "[DRY-RUN] Would configure sudo access"
+        print_info "[DRY-RUN] Would set up SSH key authentication"
+        return
+    fi
+    
+    # Check if user already exists
+    if id "$admin_user" &>/dev/null; then
+        print_warning "User $admin_user already exists"
+    else
+        # Create user with home directory, no password (SSH key only)
+        useradd -m -s /bin/bash "$admin_user"
+        print_success "Created user: $admin_user"
+    fi
+    
+    # Add user to docker group for container management
+    if getent group docker &>/dev/null; then
+        usermod -aG docker "$admin_user"
+        print_success "Added $admin_user to docker group"
+    fi
+    
+    # Add user to sudo group
+    usermod -aG sudo "$admin_user"
+    print_success "Added $admin_user to sudo group"
+    
+    # Configure passwordless sudo for the admin user (optional, more secure with password)
+    # For now, we'll require password for sudo - user can configure passwordless if desired
+    
+    # Create .ssh directory
     mkdir -p "$ssh_dir"
+    chown "$admin_user:$admin_user" "$ssh_dir"
     chmod 700 "$ssh_dir"
     
-    # If SSH key was provided via command line
-    if [[ -n "$SSH_PUBLIC_KEY" ]]; then
-        echo "$SSH_PUBLIC_KEY" >> "$auth_keys"
-        print_success "Added provided SSH public key"
+    # Add SSH key
+    if [[ -n "$ADMIN_SSH_KEY" ]]; then
+        echo "$ADMIN_SSH_KEY" >> "$auth_keys"
+        print_success "Added SSH public key for $admin_user"
     elif [[ "$AUTO_YES" != true ]]; then
-        # Prompt for SSH key
         echo ""
-        print_warning "SSH key authentication will be REQUIRED after hardening!"
-        print_info "You need to add your SSH public key now."
-        echo ""
-        print_info "Your public key usually looks like:"
-        print_info "  ssh-rsa AAAAB3NzaC1yc2E... user@hostname"
-        print_info "  ssh-ed25519 AAAAC3NzaC1lZDI1NTE5... user@hostname"
+        print_warning "SSH key authentication is REQUIRED for $admin_user!"
+        print_info "Direct root login will be DISABLED."
+        print_info "You MUST add your SSH public key now."
         echo ""
         
-        read -r -p "$(echo -e "${CYAN}Paste your SSH public key (or press Enter to skip): ${NC}")" user_key
+        read -r -p "$(echo -e "${CYAN}Paste SSH public key for $admin_user: ${NC}")" user_key
         
         if [[ -n "$user_key" ]]; then
             echo "$user_key" >> "$auth_keys"
+            ADMIN_SSH_KEY="$user_key"
             print_success "Added SSH public key"
         else
-            print_warning "No SSH key provided. Make sure you have one configured!"
-            if ! confirm "Continue without adding an SSH key? (You may lose access!)"; then
-                print_error "Aborting. Please run again with an SSH key."
-                exit 1
-            fi
+            print_error "SSH key is REQUIRED. Cannot proceed without it."
+            print_error "Direct root login will be disabled - you need an admin user key!"
+            exit 1
         fi
+    else
+        print_error "Admin SSH key required in auto-yes mode. Use --admin-key option."
+        exit 1
     fi
     
-    # Set proper permissions
+    # Set proper permissions on authorized_keys
     if [[ -f "$auth_keys" ]]; then
+        chown "$admin_user:$admin_user" "$auth_keys"
         chmod 600 "$auth_keys"
     fi
     
-    log "SSH key setup completed"
+    log "Admin user $admin_user setup completed"
+    print_success "Admin user $admin_user configured successfully"
+}
+
+setup_recovery_admin() {
+    print_header "RECOVERY ADMIN SETUP"
+    
+    local recovery_user="$RECOVERY_ADMIN_USERNAME"
+    local ssh_dir="/home/$recovery_user/.ssh"
+    local auth_keys="$ssh_dir/authorized_keys"
+    
+    print_step "Creating recovery admin user: $recovery_user"
+    print_info "This is a failsafe account in case the primary admin is compromised."
+    
+    if [[ "$DRY_RUN" == true ]]; then
+        print_info "[DRY-RUN] Would create recovery admin: $recovery_user"
+        print_info "[DRY-RUN] Would configure sudo access"
+        print_info "[DRY-RUN] Would set up SSH key authentication"
+        return
+    fi
+    
+    if [[ "$AUTO_YES" == true ]] && [[ -z "$RECOVERY_ADMIN_SSH_KEY" ]]; then
+        print_warning "Skipping recovery admin in auto-yes mode (no key provided)"
+        return
+    fi
+    
+    # Check if user already exists
+    if id "$recovery_user" &>/dev/null; then
+        print_warning "User $recovery_user already exists"
+    else
+        # Create user with home directory, no password (SSH key only)
+        useradd -m -s /bin/bash "$recovery_user"
+        print_success "Created recovery user: $recovery_user"
+    fi
+    
+    # Add user to docker group for container management
+    if getent group docker &>/dev/null; then
+        usermod -aG docker "$recovery_user"
+        print_success "Added $recovery_user to docker group"
+    fi
+    
+    # Add user to sudo group
+    usermod -aG sudo "$recovery_user"
+    print_success "Added $recovery_user to sudo group"
+    
+    # Create .ssh directory
+    mkdir -p "$ssh_dir"
+    chown "$recovery_user:$recovery_user" "$ssh_dir"
+    chmod 700 "$ssh_dir"
+    
+    # Add SSH key
+    if [[ -n "$RECOVERY_ADMIN_SSH_KEY" ]]; then
+        echo "$RECOVERY_ADMIN_SSH_KEY" >> "$auth_keys"
+        print_success "Added SSH public key for $recovery_user"
+    elif [[ "$AUTO_YES" != true ]]; then
+        echo ""
+        print_info "Recovery admin provides a backup access method."
+        print_info "Use a DIFFERENT SSH key than your primary admin."
+        print_info "Store this key securely offline."
+        echo ""
+        
+        if confirm "Do you want to set up a recovery admin account?"; then
+            read -r -p "$(echo -e "${CYAN}Paste SSH public key for recovery admin: ${NC}")" recovery_key
+            
+            if [[ -n "$recovery_key" ]]; then
+                echo "$recovery_key" >> "$auth_keys"
+                RECOVERY_ADMIN_SSH_KEY="$recovery_key"
+                print_success "Added recovery SSH public key"
+            else
+                print_warning "No recovery key provided. Skipping recovery admin setup."
+                # Remove the user if no key provided
+                userdel -r "$recovery_user" 2>/dev/null || true
+                return
+            fi
+        else
+            print_info "Skipping recovery admin setup"
+            # Remove the user if not wanted
+            userdel -r "$recovery_user" 2>/dev/null || true
+            return
+        fi
+    fi
+    
+    # Set proper permissions on authorized_keys
+    if [[ -f "$auth_keys" ]]; then
+        chown "$recovery_user:$recovery_user" "$auth_keys"
+        chmod 600 "$auth_keys"
+    fi
+    
+    log "Recovery admin $recovery_user setup completed"
+    print_success "Recovery admin $recovery_user configured successfully"
 }
 
 harden_ssh() {
@@ -786,7 +974,7 @@ harden_ssh() {
     
     print_step "Hardening SSH configuration..."
     
-    # Setup SSH key first
+    # Check for existing root SSH keys (migration purposes only)
     setup_ssh_key
     
     # Backup original config
@@ -795,7 +983,7 @@ harden_ssh() {
     if [[ "$DRY_RUN" == true ]]; then
         print_info "[DRY-RUN] Would modify $sshd_config with:"
         print_info "  - Port: $ssh_port"
-        print_info "  - PermitRootLogin: prohibit-password"
+        print_info "  - PermitRootLogin: no (DISABLED - use admin user + sudo)"
         print_info "  - PasswordAuthentication: no"
         print_info "  - PubkeyAuthentication: yes"
         print_info "  - MaxAuthTries: 3"
@@ -812,11 +1000,13 @@ harden_ssh() {
         echo "Port $ssh_port" >> "$sshd_config"
     fi
     
-    # Disable root login with password (allow with key)
-    sed -i "s/^#\?PermitRootLogin .*/PermitRootLogin prohibit-password/" "$sshd_config"
+    # SECURITY: Completely disable root SSH login
+    # Root access is only available via sudo elevation from admin user
+    sed -i "s/^#\?PermitRootLogin .*/PermitRootLogin no/" "$sshd_config"
     if ! grep -q "^PermitRootLogin " "$sshd_config"; then
-        echo "PermitRootLogin prohibit-password" >> "$sshd_config"
+        echo "PermitRootLogin no" >> "$sshd_config"
     fi
+    print_success "Direct root SSH login DISABLED (use admin user + sudo)"
     
     # Disable password authentication
     sed -i "s/^#\?PasswordAuthentication .*/PasswordAuthentication no/" "$sshd_config"
@@ -871,9 +1061,11 @@ harden_ssh() {
     print_success "SSH service restarted"
     
     print_success "SSH hardening completed"
-    print_warning "Remember: SSH is now on port $ssh_port with key-only authentication!"
+    print_warning "SECURITY MODEL: Root SSH login is DISABLED!"
+    print_warning "Connect as admin user: ssh -p $ssh_port $ADMIN_USERNAME@<server-ip>"
+    print_warning "Elevate to root with: sudo -i"
     
-    log "SSH hardening completed - Port: $ssh_port"
+    log "SSH hardening completed - Port: $ssh_port, Root login: disabled, Admin user: $ADMIN_USERNAME"
 }
 
 # =============================================================================
@@ -1101,6 +1293,131 @@ EOF
     print_info "Pod Security Policy enabled"
     
     log "k3s installation completed with enhanced security - API Port: $k3s_port"
+}
+
+# =============================================================================
+# DOCKER SWARM SETUP
+# =============================================================================
+
+setup_docker_swarm() {
+    print_header "DOCKER SWARM SETUP"
+    
+    # Check if already in swarm mode
+    if docker info --format '{{.Swarm.LocalNodeState}}' 2>/dev/null | grep -q "active"; then
+        print_info "Docker Swarm is already initialized"
+        docker node ls 2>/dev/null || print_info "Swarm status: $(docker info --format '{{.Swarm.LocalNodeState}}')"
+        if ! confirm "Reinitialize Docker Swarm?"; then
+            return
+        fi
+        
+        # Leave existing swarm
+        print_step "Leaving existing swarm..."
+        if [[ "$DRY_RUN" != true ]]; then
+            run_cmd "docker swarm leave --force" "Leave existing swarm"
+        else
+            print_info "[DRY-RUN] Would leave existing swarm"
+        fi
+    fi
+    
+    print_step "Initializing Docker Swarm..."
+    
+    if [[ "$DRY_RUN" == true ]]; then
+        print_info "[DRY-RUN] Would initialize Docker Swarm cluster"
+        print_info "[DRY-RUN] Would configure Swarm security settings"
+        return
+    fi
+    
+    # Get primary network interface IP
+    local primary_ip
+    primary_ip=$(hostname -I | awk '{print $1}')
+    
+    # Initialize swarm with security settings
+    print_info "Initializing swarm on IP: $primary_ip"
+    run_cmd "docker swarm init --advertise-addr $primary_ip --data-path-port 4789" "Initialize Docker Swarm"
+    
+    # Configure swarm security settings
+    print_step "Configuring Swarm security settings..."
+    
+    # Set up swarm network with encryption
+    print_step "Creating encrypted overlay network..."
+    run_cmd "docker network create --driver overlay --opt encrypted secure-network" "Create encrypted overlay network"
+    
+    # Create a basic service constraint for security
+    print_step "Applying Swarm security configurations..."
+    
+    # Update swarm with security settings
+    run_cmd "docker swarm update --cert-expiry 2160h --dispatcher-heartbeat 30s" "Update Swarm security settings"
+    
+    # Create manager-only network for sensitive services
+    run_cmd "docker network create --driver overlay --attachable --opt encrypted manager-network" "Create manager network"
+    
+    # Display swarm status and join token
+    print_success "Docker Swarm initialized successfully"
+    print_info "Swarm Manager IP: $primary_ip"
+    print_info "Encrypted networks created: secure-network, manager-network"
+    
+    # Show join token for workers (useful for adding nodes later)
+    echo ""
+    print_info "To add worker nodes to this swarm, run the following command on the worker nodes:"
+    echo ""
+    docker swarm join-token worker | grep -A1 "docker swarm join"
+    echo ""
+    
+    print_info "To add manager nodes to this swarm, run:"
+    echo ""
+    docker swarm join-token manager | grep -A1 "docker swarm join"
+    echo ""
+    
+    # Create basic monitoring stack
+    print_step "Setting up basic Swarm monitoring..."
+    
+    # Create monitoring directory
+    mkdir -p /opt/swarm-monitoring
+    
+    # Create a basic monitoring service (Portainer for Swarm management)
+    cat > /opt/swarm-monitoring/portainer-stack.yml << 'EOF'
+version: '3.8'
+
+services:
+  portainer:
+    image: portainer/portainer-ce:latest
+    command: -H unix:///var/run/docker.sock
+    ports:
+      - "9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    networks:
+      - manager-network
+    deploy:
+      placement:
+        constraints: [node.role == manager]
+      restart_policy:
+        condition: on-failure
+
+volumes:
+  portainer_data:
+
+networks:
+  manager-network:
+    external: true
+EOF
+    
+    # Deploy monitoring stack
+    print_step "Deploying Swarm management interface..."
+    run_cmd "docker stack deploy -c /opt/swarm-monitoring/portainer-stack.yml monitoring" "Deploy Portainer management interface"
+    
+    # Show swarm status
+    print_step "Swarm cluster status:"
+    docker node ls
+    docker network ls | grep -E "(overlay|swarm)"
+    
+    print_success "Docker Swarm setup completed"
+    print_info "Swarm management interface available on port 9000"
+    print_info "Encrypted overlay networks configured"
+    print_info "Security settings applied"
+    
+    log "Docker Swarm initialization completed - Manager IP: $primary_ip"
 }
 
 # =============================================================================
@@ -1904,15 +2221,35 @@ generate_report() {
         echo "                         CONNECTION INFORMATION"
         echo "==============================================================================="
         echo ""
+        echo "SECURITY MODEL: Root SSH login is DISABLED"
+        echo "Use the admin user and sudo for root access."
+        echo ""
+        echo "Admin User:      ${ADMIN_USERNAME:-not configured}"
+        if [[ -n "$RECOVERY_ADMIN_SSH_KEY" ]]; then
+            echo "Recovery Admin:  $RECOVERY_ADMIN_USERNAME"
+        fi
+        echo ""
         echo "SSH Connection:"
-        echo "  ssh -p ${PORT_MAP[ssh]:-22} root@$server_ip"
+        echo "  ssh -p ${PORT_MAP[ssh]:-22} ${ADMIN_USERNAME:-admin}@$server_ip"
+        echo ""
+        echo "Get Root Shell:"
+        echo "  sudo -i"
         echo ""
         echo "Fail2Ban Status:"
         echo "  sudo fail2ban-client status"
         echo ""
-        echo "Kubernetes (k3s):"
-        echo "  kubectl --server=https://$server_ip:${PORT_MAP[k3s_api]:-6443} get nodes"
-        echo "  KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get nodes"
+        
+        if [[ "${ORCHESTRATOR_CHOICE:-k3s}" == "k3s" ]]; then
+            echo "Kubernetes (k3s):"
+            echo "  kubectl --server=https://$server_ip:${PORT_MAP[k3s_api]:-6443} get nodes"
+            echo "  KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get nodes"
+        elif [[ "${ORCHESTRATOR_CHOICE}" == "swarm" ]]; then
+            echo "Docker Swarm:"
+            echo "  docker node ls"
+            echo "  docker service ls"
+            echo "  docker stack ls"
+            echo "  Management UI: http://$server_ip:9000 (Portainer)"
+        fi
         echo ""
         
         echo "==============================================================================="
@@ -2001,8 +2338,17 @@ generate_report() {
         echo "Docker:"
         docker --version 2>/dev/null | sed 's/^/  /' || echo "  Not installed"
         echo ""
-        echo "k3s:"
-        k3s --version 2>/dev/null | head -1 | sed 's/^/  /' || echo "  Not installed"
+        echo "Container Orchestration:"
+        echo "  Selected: ${ORCHESTRATOR_CHOICE:-k3s}"
+        if [[ "${ORCHESTRATOR_CHOICE:-k3s}" == "k3s" ]]; then
+            k3s --version 2>/dev/null | head -1 | sed 's/^/  /' || echo "  k3s: Not installed"
+        elif [[ "${ORCHESTRATOR_CHOICE}" == "swarm" ]]; then
+            docker info --format '{{.Swarm.LocalNodeState}}' 2>/dev/null | sed 's/^/  Docker Swarm: /' || echo "  Docker Swarm: Not active"
+            docker node ls 2>/dev/null | wc -l | awk '{print "  Swarm nodes: " $1}' 2>/dev/null || echo "  Swarm nodes: 0"
+        fi
+        echo ""
+        echo "htop (System Monitor):"
+        htop --version 2>/dev/null | head -1 | sed 's/^/  /' || echo "  Not installed"
         echo ""
         echo "Fail2Ban:"
         fail2ban-client -V 2>/dev/null | sed 's/^/  /' || echo "  Not installed"
@@ -2183,8 +2529,22 @@ main() {
                 VERBOSE=true
                 shift
                 ;;
+            --admin-user)
+                ADMIN_USERNAME="$2"
+                shift 2
+                ;;
+            --admin-key)
+                ADMIN_SSH_KEY="$2"
+                shift 2
+                ;;
+            --recovery-key)
+                RECOVERY_ADMIN_SSH_KEY="$2"
+                shift 2
+                ;;
             --ssh-key)
-                SSH_PUBLIC_KEY="$2"
+                # DEPRECATED: kept for backwards compatibility
+                print_warning "--ssh-key is deprecated. Use --admin-key instead."
+                ADMIN_SSH_KEY="$2"
                 shift 2
                 ;;
             *)
@@ -2200,10 +2560,25 @@ main() {
     echo "    ╔══════════════════════════════════════════════════════════════════════════╗"
     echo "    ║           Ubuntu Server Setup Script v${SCRIPT_VERSION}                  ║"
     echo "    ║                                                                          ║"
-    echo "    ║  Docker • k3s (Secured) • SSHGuard • Fail2Ban • Certbot • UFW • SSH      ║"
-    echo "    ║  Hardening • Unattended Upgrades                                         ║"
+    echo "    ║  Docker • k3s/Swarm • SSHGuard • Fail2Ban • Certbot • UFW • SSH          ║"
+    echo "    ║  Hardening • Unattended Upgrades • htop                                  ║"
     echo "    ╚══════════════════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
+    
+    # CRITICAL SECURITY WARNING
+    echo ""
+    print_error "╔══════════════════════════════════════════════════════════════════════════════╗"
+    print_error "║                        ⚠️  SECURITY WARNING ⚠️                           ║"
+    print_error "║                                                                            ║"
+    print_error "║  This script DISABLES direct root SSH login for security!                 ║"
+    print_error "║  You MUST have SSH keys ready before running in non-interactive mode.     ║"
+    print_error "║                                                                            ║"
+    print_error "║  Required for auto mode: --admin-user <name> --admin-key <key>            ║"
+    print_error "║  Interactive mode will prompt for SSH key.                                ║"
+    print_error "║                                                                            ║"
+    print_error "║  WITHOUT SSH KEYS: You will be LOCKED OUT of your server!                 ║"
+    print_error "╚══════════════════════════════════════════════════════════════════════════════╝"
+    echo ""
     
     if [[ "$DRY_RUN" == true ]]; then
         print_warning "DRY RUN MODE - No changes will be made"
@@ -2262,23 +2637,59 @@ main() {
         validate_system_state "pre_install"
     fi
     
-    # Update system
-    print_header "SYSTEM UPDATE"
-    print_step "Updating system packages..."
+    # System updates and essential packages
+    print_header "SYSTEM UPDATE & ESSENTIAL PACKAGES"
+    print_step "Updating package cache..."
     if [[ "$DRY_RUN" != true ]]; then
-        apt-get update
-        apt-get upgrade -y
+        run_cmd "apt-get update" "Update package cache"
     else
-        print_info "[DRY-RUN] Would update system packages"
+        print_info "[DRY-RUN] Would update package cache"
     fi
-    print_success "System updated"
+    
+    print_step "Upgrading system packages..."
+    if [[ "$DRY_RUN" != true ]]; then
+        run_cmd "apt-get upgrade -y" "Upgrade system packages"
+    else
+        print_info "[DRY-RUN] Would upgrade system packages"
+    fi
+    
+    print_step "Installing essential packages (htop, curl, wget, etc.)..."
+    if [[ "$DRY_RUN" != true ]]; then
+        run_cmd "apt-get install -y htop curl wget apt-transport-https ca-certificates gnupg lsb-release software-properties-common unzip" "Install essential packages"
+    else
+        print_info "[DRY-RUN] Would install essential packages (htop, curl, wget, etc.)"
+    fi
+    
+    print_step "Removing unnecessary packages..."
+    if [[ "$DRY_RUN" != true ]]; then
+        run_cmd "apt-get autoremove -y" "Remove unnecessary packages"
+        run_cmd "apt-get autoclean" "Clean package cache"
+    else
+        print_info "[DRY-RUN] Would remove unnecessary packages and clean cache"
+    fi
+    
+    print_success "System updated and essential packages installed"
     
     # Configure unattended upgrades
     configure_unattended_upgrades
     
     # Install services
     install_docker
-    install_k3s
+    
+    # Install orchestration platform based on choice
+    case "$ORCHESTRATOR_CHOICE" in
+        "k3s")
+            install_k3s
+            ;;
+        "swarm")
+            setup_docker_swarm
+            ;;
+        *)
+            print_error "Unknown orchestrator choice: $ORCHESTRATOR_CHOICE"
+            exit 1
+            ;;
+    esac
+    
     install_sshguard
     install_fail2ban
     
@@ -2288,7 +2699,13 @@ main() {
     # Configure firewall (before SSH hardening to ensure access)
     configure_ufw
     
+    # Setup admin users (MUST be done before SSH hardening)
+    # Admin user is required since we disable root SSH login
+    setup_admin_user
+    setup_recovery_admin
+    
     # Harden SSH (do this last to avoid lockout)
+    # Root login is disabled - use admin user + sudo
     harden_ssh
     
     # Post-installation system validation
@@ -2305,9 +2722,14 @@ main() {
     echo ""
     print_warning "IMPORTANT REMINDERS:"
     echo ""
-    print_info "1. SSH port is now: ${PORT_MAP[ssh]}"
-    print_info "2. Password authentication is DISABLED"
-    print_info "3. Use: ssh -p ${PORT_MAP[ssh]} root@$(hostname -I | awk '{print $1}')"
+    print_warning "SECURITY MODEL:"
+    print_info "- Direct root SSH login is DISABLED"
+    print_info "- SSH port is now: ${PORT_MAP[ssh]}"
+    print_info "- Password authentication is DISABLED"
+    print_info "- Admin user: $ADMIN_USERNAME"
+    echo ""
+    print_success "Connect using: ssh -p ${PORT_MAP[ssh]} $ADMIN_USERNAME@$(hostname -I | awk '{print $1}')"
+    print_success "Elevate to root: sudo -i"
     echo ""
     print_info "The detailed report has been saved. Keep it secure!"
     print_info "If any issues occur, check for error files:"
@@ -2316,27 +2738,48 @@ main() {
     echo ""
     print_header "POST-INSTALLATION TASKS"
     echo ""
-    print_warning "IMMEDIATE TASKS (Do these now to verify everything works):"
+    print_warning "CRITICAL: TEST SSH CONNECTION IMMEDIATELY!"
     echo ""
-    print_info "1. TEST SSH CONNECTION:"
-    print_info "   - Open a NEW terminal window"
-    print_info "   - Connect using: ssh -p ${PORT_MAP[ssh]} root@$(hostname -I | awk '{print $1}')"
-    print_info "   - If it fails, you may be locked out! Check the report for details."
+    print_info "1. TEST SSH CONNECTION (Do this NOW from a new terminal):"
+    print_info "   - Open a NEW terminal window (keep this one open!)"
+    print_info "   - Connect: ssh -p ${PORT_MAP[ssh]} $ADMIN_USERNAME@$(hostname -I | awk '{print $1}')"
+    print_info "   - Test sudo: sudo whoami (should output 'root')"
+    print_info "   - Elevate to root: sudo -i"
+    print_info "   - If connection fails, DO NOT close this terminal!"
     echo ""
-    print_info "2. SAVE THIS REPORT SECURELY:"
-    print_info "   - Copy this report to a safe location (USB drive, secure email, etc.)"
-    print_info "   - The report contains all your custom port configurations"
-    print_info "   - Without it, you may forget the SSH port and lose access"
+    print_info "2. SAVE THESE DETAILS SECURELY:"
+    print_info "   - SSH Port: ${PORT_MAP[ssh]}"
+    print_info "   - Admin User: $ADMIN_USERNAME"
+    if [[ -n "$RECOVERY_ADMIN_SSH_KEY" ]]; then
+        print_info "   - Recovery Admin: $RECOVERY_ADMIN_USERNAME"
+    fi
+    print_info "   - Copy the report to a secure location (USB drive, password manager, etc.)"
     echo ""
     print_info "3. VERIFY FAIL2BAN IS WORKING:"
     print_info "   - Check status: sudo fail2ban-client status"
     print_info "   - Should show 'sshd' jail active"
     print_info "   - Test with failed SSH attempts (from another machine)"
     echo ""
-    print_info "4. TEST KUBERNETES (K3S):"
-    print_info "   - Run: k3s kubectl get nodes"
-    print_info "   - Should show your server as 'Ready'"
-    print_info "   - Test deployment: k3s kubectl run test --image=nginx --port=80"
+    if [[ "$ORCHESTRATOR_CHOICE" == "k3s" ]]; then
+        print_info "4. TEST KUBERNETES (K3S):"
+        print_info "   - Run: sudo k3s kubectl get nodes"
+        print_info "   - Should show your server as 'Ready'"
+        print_info "   - Test deployment: sudo k3s kubectl run test --image=nginx --port=80"
+    else
+        print_info "4. TEST DOCKER SWARM:"
+        print_info "   - Run: docker node ls"
+        print_info "   - Should show your server as 'Leader'"
+        print_info "   - Test service: docker service create --name test nginx"
+    fi
+    echo ""
+    print_warning "ROOT ACCESS SECURITY MODEL:"
+    echo ""
+    print_info "5. HOW TO ACCESS ROOT:"
+    print_info "   - Direct root SSH is DISABLED (PermitRootLogin no)"
+    print_info "   - SSH in as: $ADMIN_USERNAME"
+    print_info "   - Run single command as root: sudo <command>"
+    print_info "   - Get root shell: sudo -i"
+    print_info "   - Switch to root (from admin): sudo su -"
     echo ""
     print_warning "ONGOING MAINTENANCE TASKS:"
     echo ""
@@ -2350,21 +2793,27 @@ main() {
     print_info "   - Port config: /etc/server-ports.conf"
     print_info "   - SSH config: /etc/ssh/sshd_config"
     print_info "   - Fail2Ban: /etc/fail2ban/jail.local"
-    print_info "   - k3s: /etc/rancher/k3s/k3s.yaml"
+    if [[ "$ORCHESTRATOR_CHOICE" == "k3s" ]]; then
+        print_info "   - k3s: /etc/rancher/k3s/k3s.yaml"
+    fi
     echo ""
     print_info "8. UPDATE SERVICES:"
     print_info "   - Docker: docker system prune -a (clean unused images)"
-    print_info "   - k3s: k3s kubectl get nodes (check cluster health)"
+    if [[ "$ORCHESTRATOR_CHOICE" == "k3s" ]]; then
+        print_info "   - k3s: sudo k3s kubectl get nodes (check cluster health)"
+    else
+        print_info "   - Swarm: docker node ls (check cluster health)"
+    fi
     print_info "   - Fail2Ban: sudo fail2ban-client reload (reload configuration)"
     print_info "   - Unattended upgrades: Check /var/log/unattended-upgrades/"
-    print_info "   - System: apt update && apt upgrade (manual updates)"
+    print_info "   - System: sudo apt update && sudo apt upgrade (manual updates)"
     echo ""
     print_info "9. MONITOR SYSTEM HEALTH:"
-    print_info "   - Check services: systemctl status <service>"
-    print_info "   - View logs: journalctl -u <service>"
+    print_info "   - Check services: sudo systemctl status <service>"
+    print_info "   - View logs: sudo journalctl -u <service>"
     print_info "   - Disk usage: df -h"
     print_info "   - Memory: free -h"
-    echo ""
+    print_info "   - System overview: htop"
     print_info "10. SECURITY AUDIT:"
     print_info "    - Review UFW rules: sudo ufw status verbose"
     print_info "    - Check Fail2Ban status: sudo fail2ban-client status"
