@@ -4,47 +4,43 @@ A collection of shell scripts for system administration, backups, container mana
 
 == Folder Structure
 
-* **Add_Fonts/** - Scripts for installing user fonts system-wide.
-  * copieToSystem.sh - Copies fonts to system directories.
-  * UserFonts/ - Directory for new fonts.
+=== Add_Fonts
+  * Scripts for installing user fonts system-wide.
 
-* **Backup_Tools/** - Backup and restore utilities.
+=== Backup_Tools - Backup and restore utilities.
   * Backup_and_Restore_Sources/ - APT sources and GPG keys backup/restore.
-    * Backup_Source_and_Key.sh - Creates backups of sources and keys.
-    * Restore_Source_and_Key.sh - Restores from backups.
-    * 2016-09-29_11:37/ - Example backup directory.
 
-* **Container/** - Docker and Kubernetes management scripts.
+=== Container - Docker and Kubernetes management scripts.
   * ubuntu-server-setup.sh - Automated Ubuntu server setup with containers.
   * Docker/ - Docker utilities (cleanup, stop all).
   * Kubernetes/ - K8s pod deletion scripts.
 
-* **Generate_System_Logs/** - System reporting tools.
+=== Generate_System_Logs/ - System reporting tools.
   * Generate_Compact_System_Status.sh - Creates system status reports.
 
-* **Image_Correction/** - Image processing scripts.
+=== Image_Correction/ - Image processing scripts.
   * auto_brightenup_images.sh - Auto-brightens images.
   * normalise_images.sh - Normalizes image colors.
 
-* **List_Installation/** - Package installation from lists.
+=== List_Installation/ - Package installation from lists.
   * add_pack.sh, install_list.sh, package_manager.sh - Manage package lists.
   * lists/ - Predefined package lists (developer, server, etc.).
 
-* **Other_Systems/** - Scripts for non-Linux systems.
+=== Other_Systems/ - Scripts for non-Linux systems.
   * Android/ - ADB bloatware removal and system reports.
   * MacOs/ - macOS utilities (Xcode, NTFS drives, installs).
 
-* **Program_Setups/** - Setup scripts for software stacks.
+=== Program_Setups/ - Setup scripts for software stacks.
   * setup_fish.sh, setup_LAMP.sh, setup_nodeJs.sh - Install common programs.
   * Pine64_GPIO_Setup/ - GPIO libraries for Pine64 hardware.
 
-* **rulesD_Problems/** - Udev rules for hardware issues.
+=== rulesD_Problems/ - Udev rules for hardware issues.
   * Solve_Android_Mount_Problem/ - Android device mounting rules.
   * Solve_Arduino_Upload_Problem/ - Arduino upload permissions.
 
-* **System_Configurations/** - System tweaks and configurations.
+=== System_Configurations/ - System tweaks and configurations.
   * Disable_Window_Animations.sh - Disables desktop animations.
   * configure-unattended-upgrades/ - Auto-update configurations.
 
-* **Usefull_Commands/** - Handy command snippets and scripts.
+=== Usefull_Commands/ - Handy command snippets and scripts.
   * Various one-liners for MySQL dumps, monitoring, etc.
