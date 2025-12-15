@@ -48,6 +48,8 @@ sudo ./ubuntu-server-setup.sh --dry-run
 
 IMPORTANT: This script must be run as root (using `sudo`) and requires Ubuntu 20.04 or newer.
 
+NOTE: Choose between **k3s** (Kubernetes with containerd) or **Docker Swarm** (Docker CE + Swarm). These are mutually exclusive installations.
+
 WARNING: **CRITICAL SECURITY WARNING** - This script DISABLES direct root SSH login! You MUST have SSH keys ready. Without them, you will be **LOCKED OUT** of your server!
 
 * **Interactive mode**: Will prompt for SSH key during setup
@@ -64,18 +66,24 @@ WARNING: **CRITICAL SECURITY WARNING** - This script DISABLES direct root SSH lo
 * User group management
 * Service auto-start configuration
 
-==== 2. Container Orchestration
-* **k3s** - Lightweight Kubernetes distribution (recommended)
-* **Docker Swarm** - Simple multi-node clustering
+==== 2. Container Platform (Choose One)
+* **k3s** - Lightweight Kubernetes with containerd runtime
+* **Docker Swarm** - Docker CE with Swarm orchestration
 * **Security Hardening:**
   - Pod Security Policies (PSP) for k3s
   - Network Security Policies
   - Admission Controllers (NodeRestriction, ResourceQuota)
-  - Audit logging with structured format
   - RBAC enforcement
   - Encrypted secrets at rest
 
-==== 3. Intrusion Prevention
+==== 3. Web Server & Reverse Proxy
+* **Nginx** - High-performance web server
+* Container routing and load balancing
+* Reverse proxy for container services
+* SSL/TLS termination for Certbot
+* Ready for container orchestration
+
+==== 4. Intrusion Prevention
 * **Fail2Ban** - Advanced intrusion prevention system
   - SSH brute-force protection
   - HTTP/HTTPS attack mitigation
@@ -86,13 +94,14 @@ WARNING: **CRITICAL SECURITY WARNING** - This script DISABLES direct root SSH lo
   - Automatic IP blocking
   - Whitelist support
 
-==== 4. SSL Certificate Management
+==== 5. SSL Certificate Management
 * **Certbot** - Let's Encrypt SSL certificates
-* Automatic certificate renewal
+* Automatic certificate renewal via Nginx plugin
 * Multiple domain support
-* Nginx/Apache integration ready
+* Automatic Nginx HTTPS configuration
+* **Note**: Domain must resolve to server IP and port 80 must be accessible
 
-==== 5. System Security
+==== 6. System Security
 * **UFW (Uncomplicated Firewall)** - Simplified iptables management
 * **SSH Hardening** - Industry-standard security practices
 * **Unattended Upgrades** - Automatic security updates
@@ -313,6 +322,59 @@ CERTBOT_HTTPS_PORT=443
 
 === Service Configuration
 
+==== Nginx Configuration
+Location: `/etc/nginx/sites-available/container-router`
+
+[source,nginx]
+----
+server {
+    listen 80 default_server;
+    server_name _;
+    
+    # Default landing page
+    location / {
+        root /var/www/html;
+        index index.html;
+    }
+    
+    # Example: Route to container service
+    location /myapp {
+        proxy_pass http://localhost:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+    
+    # Health check endpoint
+    location /health {
+        return 200 "healthy\n";
+    }
+}
+----
+
+**Nginx Features:**
+
+* Reverse proxy for container services
+* Load balancing capabilities
+* SSL/TLS termination (configured automatically by Certbot)
+* HTTP/2 support
+* Container routing template ready for customization
+
+**Adding Container Routes:**
+
+[source,bash]
+----
+# Edit the Nginx configuration
+sudo nano /etc/nginx/sites-available/container-router
+
+# Test configuration
+sudo nginx -t
+
+# Reload Nginx
+sudo systemctl reload nginx
+----
+
 ==== Docker Configuration
 Location: `/etc/docker/daemon.json`
 
@@ -528,6 +590,40 @@ lsof -i :2222
 sudo systemctl stop <service>
 ----
 
+==== k3s Installation Failures
+
+**Port Conflict with SSH:**
+
+If k3s fails to start with "service did not take the steps required", check for port conflicts:
+
+[source,bash]
+----
+# Check k3s service status
+sudo systemctl status k3s
+sudo journalctl -xeu k3s.service
+
+# Check port configuration
+cat /etc/server-ports.conf
+
+# If k3s port conflicts with SSH port, fix it:
+sudo nano /etc/server-ports.conf
+# Change: K3S_API_PORT=4444 (wrong - conflicts with SSH)
+# To:     K3S_API_PORT=6443 (correct - default k3s port)
+
+# Uninstall failed k3s installation
+sudo /usr/local/bin/k3s-uninstall.sh
+
+# Re-run the setup script
+sudo ./ubuntu-server-setup.sh
+----
+
+**Common k3s Issues:**
+
+* Port 6443 already in use → Change K3S_API_PORT in config
+* Insufficient memory → Need at least 2GB RAM for k3s
+* Network issues → Check firewall allows k3s ports
+* SELinux blocking → Usually not an issue on Ubuntu
+
 ==== Service Startup Issues
 [source,bash]
 ----
@@ -540,19 +636,62 @@ journalctl -u k3s -f
 ----
 
 ==== SSL Certificate Issues
+
+**Why certificates might not be obtained during setup:**
+
+* **DNS not configured**: Domain must resolve to your server IP before certificates can be obtained
+* **Port 80 blocked**: Certificate validation requires port 80 to be accessible from the internet
+* **Timing**: DNS changes can take time to propagate (up to 24-48 hours)
+
 [source,bash]
 ----
+# Check if domain resolves to your server
+dig +short yourdomain.com
+
+# Test certificate obtaining manually
+sudo certbot certonly --standalone -d yourdomain.com
+
 # Test certificate renewal
 sudo certbot renew --dry-run
 
 # Check certificate status
 sudo certbot certificates
-
-# Manual certificate generation
-sudo certbot certonly --standalone -d yourdomain.com
 ----
 
 === Error Recovery
+
+==== SSH Service Failure Recovery
+
+If the setup report shows "SSH service is not running", your server may be inaccessible:
+
+[source,bash]
+----
+# Access server via console/VNC/KVM/cloud console
+sudo -i
+
+# Check SSH service status
+systemctl status sshd
+systemctl status ssh
+
+# Try to start SSH service
+systemctl start sshd
+# or
+systemctl start ssh
+
+# If that fails, check configuration
+sshd -t  # Test SSH config syntax
+
+# Check logs for errors
+journalctl -u sshd -n 50
+journalctl -u ssh -n 50
+
+# Fix common issues:
+# 1. Port conflict (check if port is in use)
+netstat -tlnp | grep :${SSH_PORT}
+# 2. Configuration error (restore backup)
+cp /etc/ssh/sshd_config.backup.* /etc/ssh/sshd_config
+systemctl restart sshd
+----
 
 ==== SSH Lockout Recovery
 

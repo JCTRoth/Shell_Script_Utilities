@@ -248,20 +248,43 @@ validate_system_state() {
                 return 1
             fi
 
-            # Check if required ports are available
+            # Check if required ports are available (skip if services already installed)
+            # This allows re-running the script without failing on port conflicts
+            local port_check_failed=false
             for port in "${PORT_MAP[@]}"; do
-                if ss -tuln | grep -q ":${port} "; then
-                    print_error "Port $port is already in use"
-                    return 1
+                if ss -tuln | grep -q ":${port}\b"; then
+                    # Port is in use - this is OK if the service is already installed
+                    if [[ -f /etc/systemd/system/k3s.service ]] || [[ -f /etc/systemd/system/docker.service ]]; then
+                        # Services appear to be installed, skip port check
+                        print_info "Port $port in use (service likely already installed - continuing)"
+                    else
+                        # Port in use but services not installed - this is a problem
+                        print_error "Port $port is already in use by another service"
+                        port_check_failed=true
+                    fi
                 fi
             done
+            
+            if [[ "$port_check_failed" == true ]]; then
+                return 1
+            fi
             ;;
 
         "post_install")
             log "Validating system state after installation"
 
             # Check if critical services are running
-            local critical_services=("sshd" "docker" "ufw")
+            local critical_services=("docker" "ufw")
+            
+            # Check SSH service (CRITICAL - must be running)
+            if systemctl is-active --quiet sshd 2>/dev/null || systemctl is-active --quiet ssh 2>/dev/null; then
+                : # SSH is running
+            else
+                print_error "CRITICAL: SSH service is not running!"
+                print_error "This will make your server inaccessible!"
+                print_error "Check the SSH hardening section above for recovery steps."
+                return 1  # Fail validation
+            fi
             
             # Add orchestration service based on choice
             if [[ "${ORCHESTRATOR_CHOICE:-k3s}" == "k3s" ]]; then
@@ -281,12 +304,8 @@ validate_system_state() {
                 fi
             fi
 
-            # Verify SSH is accessible on new port
-            local ssh_port="${PORT_MAP[ssh]}"
-            if ! ss -tuln | grep -q ":${ssh_port} "; then
-                print_error "SSH is not listening on port $ssh_port"
-                return 1
-            fi
+            # Note: SSH port check is skipped here because SSH hardening happens after this validation
+            print_info "SSH hardening will be applied as the final step"
             ;;
 
         *)
@@ -393,11 +412,11 @@ ${BOLD}EXAMPLES:${NC}
     sudo $SCRIPT_NAME --yes --admin-user containeruser --admin-key "ssh-ed25519 AAAA..." --recovery-key "ssh-rsa BBBB..."
 
 ${BOLD}SERVICES INSTALLED:${NC}
-    • Docker CE (Container runtime)
-    • Container Orchestration (k3s Kubernetes OR Docker Swarm - your choice)
+    • Container Platform: k3s (Kubernetes + containerd) OR Docker CE + Swarm
+    • Nginx (Web server & reverse proxy for containers)
     • SSHGuard (Brute-force protection)
     • Fail2Ban (Intrusion prevention system)
-    • Certbot (SSL certificates)
+    • Certbot (SSL certificates via Nginx)
     • UFW (Uncomplicated Firewall)
     • Unattended Upgrades (Automatic security updates)
     • htop (System monitoring)
@@ -469,21 +488,6 @@ confirm() {
     [[ "$response" =~ ^[Yy]$ ]]
 }
 
-run_cmd() {
-    local cmd="$*"
-    
-    if [[ "$DRY_RUN" == true ]]; then
-        print_info "[DRY-RUN] Would execute: $cmd"
-        return 0
-    fi
-    
-    log "Executing: $cmd"
-    if ! eval "$cmd"; then
-        log "ERROR: Command failed: $cmd"
-        return 1
-    fi
-}
-
 backup_file() {
     local file="$1"
     local backup="${file}.backup.$(date +%Y%m%d_%H%M%S)"
@@ -537,7 +541,7 @@ setup_wizard() {
     echo ""
     
     while true; do
-        read -r -p "$(echo -e "${CYAN}Enter admin username: ${NC}")" admin_name
+        read -r -p "$(echo -e "${CYAN}Enter username for non-root admin user: ${NC}")" admin_name
         if [[ -z "$admin_name" ]]; then
             print_warning "Admin username is required."
         elif [[ "$admin_name" == "root" ]]; then
@@ -555,11 +559,13 @@ setup_wizard() {
     
     # Orchestrator Choice
     echo ""
-    print_step "Container Orchestration Platform"
+    print_step "Container Platform Selection"
     echo ""
-    print_info "Choose your container orchestration platform:"
-    print_info "1) k3s (Lightweight Kubernetes) - Recommended for production"
-    print_info "2) Docker Swarm - Simple multi-node clustering"
+    print_info "Choose your container platform (mutually exclusive installations):"
+    print_info "1) k3s (Lightweight Kubernetes) - Uses containerd runtime"
+    print_info "2) Docker Swarm - Uses Docker CE runtime + Swarm orchestration"
+    echo ""
+    print_info "k3s is recommended for most users. Both provide container orchestration."
     echo ""
     
     while true; do
@@ -749,6 +755,20 @@ load_port_config() {
         source "$PORT_CONFIG_FILE"
         PORT_MAP[ssh]="${SSH_PORT:-$DEFAULT_SSH_PORT}"
         PORT_MAP[k3s_api]="${K3S_API_PORT:-$DEFAULT_K3S_API_PORT}"
+        
+        # Validate no port conflicts
+        if [[ "${PORT_MAP[ssh]}" == "${PORT_MAP[k3s_api]}" ]]; then
+            print_error "Port conflict detected in $PORT_CONFIG_FILE!"
+            print_error "SSH and k3s API cannot use the same port (${PORT_MAP[ssh]})"
+            print_error ""
+            print_error "Fixing automatically: Setting k3s API to default port 6443"
+            PORT_MAP[k3s_api]="$DEFAULT_K3S_API_PORT"
+            
+            # Update the config file
+            sed -i "s/^K3S_API_PORT=.*/K3S_API_PORT=${DEFAULT_K3S_API_PORT}/" "$PORT_CONFIG_FILE"
+            print_success "Port conflict resolved. k3s API port set to ${DEFAULT_K3S_API_PORT}"
+        fi
+        
         return 0
     fi
     return 1
@@ -994,55 +1014,48 @@ harden_ssh() {
     # Create hardened sshd_config
     print_step "Applying SSH hardening settings..."
     
-    # Modify SSH port
-    sed -i "s/^#\?Port .*/Port $ssh_port/" "$sshd_config"
-    if ! grep -q "^Port " "$sshd_config"; then
-        echo "Port $ssh_port" >> "$sshd_config"
-    fi
+    # Modify SSH port - remove all existing Port lines first to avoid duplicates
+    sed -i '/^Port /d' "$sshd_config"
+    sed -i '/^#Port /d' "$sshd_config"
+    # Add the new port at the beginning of the file
+    sed -i "1i Port $ssh_port" "$sshd_config"
     
     # SECURITY: Completely disable root SSH login
     # Root access is only available via sudo elevation from admin user
-    sed -i "s/^#\?PermitRootLogin .*/PermitRootLogin no/" "$sshd_config"
-    if ! grep -q "^PermitRootLogin " "$sshd_config"; then
-        echo "PermitRootLogin no" >> "$sshd_config"
-    fi
+    sed -i '/^PermitRootLogin /d' "$sshd_config"
+    sed -i '/^#PermitRootLogin /d' "$sshd_config"
+    echo "PermitRootLogin no" >> "$sshd_config"
     print_success "Direct root SSH login DISABLED (use admin user + sudo)"
     
     # Disable password authentication
-    sed -i "s/^#\?PasswordAuthentication .*/PasswordAuthentication no/" "$sshd_config"
-    if ! grep -q "^PasswordAuthentication " "$sshd_config"; then
-        echo "PasswordAuthentication no" >> "$sshd_config"
-    fi
+    sed -i '/^PasswordAuthentication /d' "$sshd_config"
+    sed -i '/^#PasswordAuthentication /d' "$sshd_config"
+    echo "PasswordAuthentication no" >> "$sshd_config"
     
     # Enable public key authentication
-    sed -i "s/^#\?PubkeyAuthentication .*/PubkeyAuthentication yes/" "$sshd_config"
-    if ! grep -q "^PubkeyAuthentication " "$sshd_config"; then
-        echo "PubkeyAuthentication yes" >> "$sshd_config"
-    fi
+    sed -i '/^PubkeyAuthentication /d' "$sshd_config"
+    sed -i '/^#PubkeyAuthentication /d' "$sshd_config"
+    echo "PubkeyAuthentication yes" >> "$sshd_config"
     
     # Limit authentication attempts
-    sed -i "s/^#\?MaxAuthTries .*/MaxAuthTries 3/" "$sshd_config"
-    if ! grep -q "^MaxAuthTries " "$sshd_config"; then
-        echo "MaxAuthTries 3" >> "$sshd_config"
-    fi
+    sed -i '/^MaxAuthTries /d' "$sshd_config"
+    sed -i '/^#MaxAuthTries /d' "$sshd_config"
+    echo "MaxAuthTries 3" >> "$sshd_config"
     
     # Reduce login grace time
-    sed -i "s/^#\?LoginGraceTime .*/LoginGraceTime 20/" "$sshd_config"
-    if ! grep -q "^LoginGraceTime " "$sshd_config"; then
-        echo "LoginGraceTime 20" >> "$sshd_config"
-    fi
+    sed -i '/^LoginGraceTime /d' "$sshd_config"
+    sed -i '/^#LoginGraceTime /d' "$sshd_config"
+    echo "LoginGraceTime 20" >> "$sshd_config"
     
     # Disable empty passwords
-    sed -i "s/^#\?PermitEmptyPasswords .*/PermitEmptyPasswords no/" "$sshd_config"
-    if ! grep -q "^PermitEmptyPasswords " "$sshd_config"; then
-        echo "PermitEmptyPasswords no" >> "$sshd_config"
-    fi
+    sed -i '/^PermitEmptyPasswords /d' "$sshd_config"
+    sed -i '/^#PermitEmptyPasswords /d' "$sshd_config"
+    echo "PermitEmptyPasswords no" >> "$sshd_config"
     
     # Disable X11 forwarding
-    sed -i "s/^#\?X11Forwarding .*/X11Forwarding no/" "$sshd_config"
-    if ! grep -q "^X11Forwarding " "$sshd_config"; then
-        echo "X11Forwarding no" >> "$sshd_config"
-    fi
+    sed -i '/^X11Forwarding /d' "$sshd_config"
+    sed -i '/^#X11Forwarding /d' "$sshd_config"
+    echo "X11Forwarding no" >> "$sshd_config"
     
     # Validate configuration
     print_step "Validating SSH configuration..."
@@ -1055,15 +1068,100 @@ harden_ssh() {
         exit 1
     fi
     
-    # Restart SSH service
+    # Restart SSH service (try different service names)
     print_step "Restarting SSH service..."
-    systemctl restart sshd
-    print_success "SSH service restarted"
+    
+    # Ubuntu 24.04+ uses systemd socket activation by default
+    # This overrides the Port setting in sshd_config, so we need to disable it
+    print_step "Disabling systemd socket activation (to apply custom SSH port)..."
+    if systemctl is-active --quiet ssh.socket 2>/dev/null; then
+        systemctl stop ssh.socket 2>/dev/null || true
+        systemctl disable ssh.socket 2>/dev/null || true
+        print_success "SSH socket activation disabled"
+    fi
+    
+    # Remove socket dependency from SSH service
+    if grep -q "Requires=ssh.socket" /etc/systemd/system/ssh.service 2>/dev/null || \
+       grep -q "Requires=ssh.socket" /usr/lib/systemd/system/ssh.service 2>/dev/null; then
+        print_step "Removing socket dependency from SSH service..."
+        mkdir -p /etc/systemd/system
+        cp /usr/lib/systemd/system/ssh.service /etc/systemd/system/ssh.service 2>/dev/null || true
+        sed -i '/Requires=ssh.socket/d' /etc/systemd/system/ssh.service
+        systemctl daemon-reload
+        print_success "Socket dependency removed"
+    fi
+    
+    # Try different SSH service names and restart methods
+    # Try ssh first (Ubuntu), then sshd (some systems), then service command
+    local ssh_restarted=false
+    
+    if systemctl restart ssh 2>/dev/null; then
+        print_success "SSH service (ssh) restarted"
+        ssh_restarted=true
+    elif systemctl restart sshd 2>/dev/null; then
+        print_success "SSH service (sshd) restarted"
+        ssh_restarted=true
+    elif service ssh restart 2>/dev/null; then
+        print_success "SSH service restarted via service command"
+        ssh_restarted=true
+    fi
+    
+    # Verify SSH is actually running
+    sleep 2
+    if systemctl is-active --quiet sshd 2>/dev/null || systemctl is-active --quiet ssh 2>/dev/null; then
+        print_success "SSH service is confirmed running"
+    else
+        print_error "CRITICAL: SSH service failed to start!"
+        print_error "Your server may become inaccessible!"
+        print_error ""
+        print_error "IMMEDIATE RECOVERY STEPS:"
+        print_error "1. Access server via console/VNC/KVM"
+        print_error "2. Check SSH configuration: nano /etc/ssh/sshd_config"
+        print_error "3. Test SSH config: sshd -t"
+        print_error "4. Start SSH manually: systemctl start ssh"
+        print_error "5. If that fails: systemctl start sshd"
+        print_error ""
+        print_error "The script will continue, but SSH access may not work!"
+        print_warning "SAVE THIS MESSAGE - You may need console access to fix SSH!"
+        
+        # Don't exit - let the script complete so other services can be configured
+        # But log this critical error prominently
+        log "CRITICAL ERROR: SSH service failed to start after hardening"
+    fi
     
     print_success "SSH hardening completed"
-    print_warning "SECURITY MODEL: Root SSH login is DISABLED!"
+    
+    # Verify SSH is listening on new port
+    print_step "Verifying SSH is listening on port $ssh_port..."
+    local retry_count=0
+    local max_retries=10
+    local ssh_verified=false
+    
+    while [[ $retry_count -lt $max_retries ]]; do
+        if ss -tuln | grep -q ":${ssh_port}\b"; then
+            print_success "✓ SSH is listening on port $ssh_port"
+            ssh_verified=true
+            break
+        fi
+        retry_count=$((retry_count + 1))
+        if [[ $retry_count -lt $max_retries ]]; then
+            sleep 1
+        fi
+    done
+    
+    if [[ "$ssh_verified" != true ]]; then
+        print_error "SSH is not listening on port $ssh_port after 10 seconds"
+        print_warning "Current SSH listeners:"
+        ss -tuln | grep :ssh || ss -tuln | grep :22
+        print_info "You may need to manually restart SSH: systemctl restart sshd"
+    fi
+    
+    print_warning "═══════════════════════════════════════════════════════════════"
+    print_warning "  CRITICAL: ROOT SSH LOGIN IS NOW DISABLED!"
+    print_warning "═══════════════════════════════════════════════════════════════"
     print_warning "Connect as admin user: ssh -p $ssh_port $ADMIN_USERNAME@<server-ip>"
     print_warning "Elevate to root with: sudo -i"
+    print_warning "═══════════════════════════════════════════════════════════════"
     
     log "SSH hardening completed - Port: $ssh_port, Root login: disabled, Admin user: $ADMIN_USERNAME"
 }
@@ -1146,6 +1244,23 @@ install_k3s() {
     print_header "K3S INSTALLATION"
     
     local k3s_port="${PORT_MAP[k3s_api]}"
+    local ssh_port="${PORT_MAP[ssh]}"
+    
+    # Critical: Check for port conflicts
+    if [[ "$k3s_port" == "$ssh_port" ]]; then
+        print_error "CRITICAL: k3s port ($k3s_port) conflicts with SSH port ($ssh_port)!"
+        print_error "This is likely due to a configuration error."
+        print_error ""
+        print_error "RECOVERY STEPS:"
+        print_error "1. Check port configuration: cat /etc/server-ports.conf"
+        print_error "2. Fix the k3s API port (should be 6443 or custom port != SSH port)"
+        print_error "3. Edit: sudo nano /etc/server-ports.conf"
+        print_error "4. Set: K3S_API_PORT=6443 (or another available port)"
+        print_error "5. Re-run this script"
+        print_error ""
+        log "ERROR: k3s installation failed - port conflict with SSH ($k3s_port)"
+        return 1
+    fi
     
     if command_exists k3s; then
         print_info "k3s is already installed"
@@ -1157,6 +1272,7 @@ install_k3s() {
     
     print_step "Installing k3s (Lightweight Kubernetes)..."
     print_info "Using custom API port: $k3s_port"
+    print_info "SSH port: $ssh_port (must be different from k3s port)"
     
     if [[ "$DRY_RUN" == true ]]; then
         print_info "[DRY-RUN] Would install k3s with API port $k3s_port"
@@ -1165,24 +1281,23 @@ install_k3s() {
     
     # Install k3s with enhanced security settings
     # --https-listen-port: Custom API server port
-    # --disable=traefik: Remove default ingress controller
+    # --disable=traefik: Remove default ingress controller (we use Nginx)
     # --write-kubeconfig-mode: Restrict kubeconfig permissions
     # --tls-san: Add additional TLS subject alternative names
     # --kube-apiserver-arg: Additional API server security arguments
     # --kubelet-arg: Additional kubelet security arguments
+    # Note: PodSecurityPolicy removed in k8s 1.25+, using Pod Security Admission instead
     curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server \
         --https-listen-port=$k3s_port \
         --disable=traefik \
         --write-kubeconfig-mode=600 \
         --tls-san=$(hostname -I | awk '{print $1}') \
-        --kube-apiserver-arg=--enable-admission-plugins=NodeRestriction,PodSecurityPolicy \
+        --kube-apiserver-arg=--enable-admission-plugins=NodeRestriction \
         --kube-apiserver-arg=--audit-log-path=/var/log/k3s-audit.log \
         --kube-apiserver-arg=--audit-log-maxage=30 \
         --kube-apiserver-arg=--audit-log-maxbackup=10 \
         --kube-apiserver-arg=--audit-log-maxsize=100 \
         --kube-apiserver-arg=--service-account-lookup=true \
-        --kube-apiserver-arg=--enable-aggregator-routing=false \
-        --kubelet-arg=--protect-kernel-defaults=true \
         --kubelet-arg=--read-only-port=0 \
         --kubelet-arg=--streaming-connection-idle-timeout=30m" sh -
     
@@ -1248,49 +1363,24 @@ spec:
       port: 53
 EOF
     
-    # Apply Pod Security Standards
-    print_step "Applying Pod Security Standards..."
-    cat << 'EOF' | k3s kubectl apply -f -
-apiVersion: policy/v1beta1
-kind: PodSecurityPolicy
-metadata:
-  name: restricted
-spec:
-  privileged: false
-  allowPrivilegeEscalation: false
-  requiredDropCapabilities:
-    - ALL
-  volumes:
-    - 'configMap'
-    - 'emptyDir'
-    - 'projected'
-    - 'secret'
-    - 'downwardAPI'
-    - 'persistentVolumeClaim'
-  hostNetwork: false
-  hostIPC: false
-  hostPID: false
-  runAsUser:
-    rule: 'MustRunAsNonRoot'
-  seLinux:
-    rule: 'RunAsAny'
-  supplementalGroups:
-    rule: 'MustRunAs'
-    ranges:
-    - min: 1
-      max: 65535
-  fsGroup:
-    rule: 'MustRunAs'
-    ranges:
-    - min: 1
-      max: 65535
-EOF
+    # Apply Pod Security Standards using Pod Security Admission (replaces deprecated PodSecurityPolicy)
+    # PSA uses namespace labels instead of cluster-wide policies
+    print_step "Applying Pod Security Standards (Pod Security Admission)..."
+    
+    # Label the default namespace with restricted security standard
+    k3s kubectl label --overwrite namespace default \
+        pod-security.kubernetes.io/enforce=restricted \
+        pod-security.kubernetes.io/enforce-version=latest \
+        pod-security.kubernetes.io/warn=restricted \
+        pod-security.kubernetes.io/warn-version=latest \
+        pod-security.kubernetes.io/audit=restricted \
+        pod-security.kubernetes.io/audit-version=latest
     
     print_success "k3s installation and security hardening completed"
     print_info "Kubernetes API available on port $k3s_port"
     print_info "Audit logs: /var/log/k3s-audit.log"
     print_info "Network policies applied (default deny)"
-    print_info "Pod Security Policy enabled"
+    print_info "Pod Security Admission enabled (restricted profile)"
     
     log "k3s installation completed with enhanced security - API Port: $k3s_port"
 }
@@ -1916,6 +2006,136 @@ EOF
 }
 
 # =============================================================================
+# NGINX INSTALLATION
+# =============================================================================
+
+install_nginx() {
+    print_header "NGINX INSTALLATION"
+    
+    if command_exists nginx; then
+        print_info "Nginx is already installed"
+        nginx -v
+        if ! confirm "Reinstall Nginx?"; then
+            return
+        fi
+    fi
+    
+    print_step "Installing Nginx..."
+    
+    if [[ "$DRY_RUN" == true ]]; then
+        print_info "[DRY-RUN] Would install Nginx"
+        return
+    fi
+    
+    # Install Nginx
+    run_cmd "apt-get update"
+    run_cmd "apt-get install -y nginx"
+    
+    # Create default landing page to ensure port 80 is responsive
+    print_step "Configuring Nginx default site..."
+    cat > /var/www/html/index.html << 'EOF'
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Server Ready</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .container {
+            text-align: center;
+            padding: 2rem;
+        }
+        h1 { font-size: 3rem; margin: 0; }
+        p { font-size: 1.2rem; margin: 1rem 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>✓ Server is Ready</h1>
+        <p>Nginx is running and ready to serve containers</p>
+        <p><small>Configure your container routing in Nginx</small></p>
+    </div>
+</body>
+</html>
+EOF
+    
+    # Configure Nginx for container routing (basic template)
+    print_step "Creating Nginx configuration template..."
+    cat > /etc/nginx/sites-available/container-router << 'EOF'
+# Nginx Container Router Configuration
+# This file is a template for routing to container services
+
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    
+    server_name _;
+    
+    # Default location - landing page
+    location / {
+        root /var/www/html;
+        index index.html;
+    }
+    
+    # Example: Route to container on port 8080
+    # Uncomment and modify as needed:
+    # location /myapp {
+    #     proxy_pass http://localhost:8080;
+    #     proxy_set_header Host $host;
+    #     proxy_set_header X-Real-IP $remote_addr;
+    #     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    #     proxy_set_header X-Forwarded-Proto $scheme;
+    # }
+    
+    # Health check endpoint for monitoring
+    location /health {
+        access_log off;
+        return 200 "healthy\n";
+        add_header Content-Type text/plain;
+    }
+}
+EOF
+    
+    # Enable the configuration
+    rm -f /etc/nginx/sites-enabled/default
+    ln -sf /etc/nginx/sites-available/container-router /etc/nginx/sites-enabled/
+    
+    # Test Nginx configuration
+    print_step "Testing Nginx configuration..."
+    if nginx -t; then
+        print_success "Nginx configuration is valid"
+    else
+        print_error "Nginx configuration validation failed!"
+        return 1
+    fi
+    
+    # Start and enable Nginx
+    run_cmd "systemctl enable nginx"
+    run_cmd "systemctl restart nginx"
+    
+    # Verify Nginx is running
+    if systemctl is-active --quiet nginx; then
+        print_success "Nginx installed and running on port 80"
+    else
+        print_warning "Nginx installed but not running"
+    fi
+    
+    print_success "Nginx installation completed"
+    print_info "Default page available at http://$(hostname -I | awk '{print $1}')"
+    print_info "Configuration: /etc/nginx/sites-available/container-router"
+    
+    log "Nginx installation completed"
+}
+
+# =============================================================================
 # CERTBOT SSL CERTIFICATE SETUP
 # =============================================================================
 
@@ -1934,20 +2154,82 @@ setup_certbot() {
     
     print_step "Installing Certbot..."
     
-    # Install Certbot
+    # Install Certbot with Nginx plugin
     run_cmd "apt-get update"
     run_cmd "apt-get install -y certbot python3-certbot-nginx"
     
     # Get SSL certificate
     print_step "Obtaining SSL certificate for $CERTBOT_DOMAIN..."
     
-    # Obtain certificate
-    if certbot certonly --standalone -d "$CERTBOT_DOMAIN" --email "$CERTBOT_EMAIL" --agree-tos --non-interactive; then
+    # Get server IP for validation
+    local server_ip
+    server_ip=$(hostname -I | awk '{print $1}')
+    print_info "Note: Domain must point to this server IP ($server_ip) and port 80 must be accessible"
+    
+    # Check if domain resolves to this server
+    local domain_ip
+    domain_ip=$(dig +short "$CERTBOT_DOMAIN" | head -1)
+    if [[ -z "$domain_ip" ]]; then
+        print_warning "Domain $CERTBOT_DOMAIN does not resolve to any IP address"
+        print_warning "DNS may not be configured yet. Certificate obtaining will fail."
+        print_warning "Update DNS to point to $server_ip, then run:"
+        print_warning "  sudo certbot --nginx -d $CERTBOT_DOMAIN"
+        print_warning "Skipping certificate obtaining for now..."
+        return
+    elif [[ "$domain_ip" != "$server_ip" ]]; then
+        print_warning "Domain $CERTBOT_DOMAIN resolves to $domain_ip, not this server ($server_ip)"
+        print_warning "Certificate obtaining will likely fail. Update DNS first, then run:"
+        print_warning "  sudo certbot --nginx -d $CERTBOT_DOMAIN"
+        print_warning "Skipping certificate obtaining for now..."
+        return
+    fi
+    
+    # Ensure Nginx is running for Certbot validation
+    if ! systemctl is-active --quiet nginx; then
+        print_warning "Nginx is not running. Starting Nginx for certificate validation..."
+        systemctl start nginx || print_error "Failed to start Nginx"
+    fi
+    
+    # Create Nginx configuration for the domain
+    print_step "Creating Nginx configuration for $CERTBOT_DOMAIN..."
+    cat > /etc/nginx/sites-available/$CERTBOT_DOMAIN << EOF
+server {
+    listen 80;
+    listen [::]:80;
+    server_name $CERTBOT_DOMAIN;
+    
+    root /var/www/html;
+    index index.html;
+    
+    location / {
+        try_files \$uri \$uri/ =404;
+    }
+    
+    # Allow Let's Encrypt validation
+    location ~ /.well-known {
+        allow all;
+    }
+}
+EOF
+    
+    # Enable the domain configuration
+    ln -sf /etc/nginx/sites-available/$CERTBOT_DOMAIN /etc/nginx/sites-enabled/
+    
+    # Test and reload Nginx
+    if nginx -t 2>/dev/null; then
+        systemctl reload nginx
+        print_success "Nginx configured for $CERTBOT_DOMAIN"
+    else
+        print_warning "Nginx configuration test failed"
+    fi
+    
+    # Obtain certificate using Nginx plugin (automatically configures SSL)
+    if certbot --nginx -d "$CERTBOT_DOMAIN" --email "$CERTBOT_EMAIL" --agree-tos --non-interactive --redirect; then
         print_success "SSL certificate obtained successfully"
         
         # Configure automatic renewal
         print_step "Setting up automatic certificate renewal..."
-        (crontab -l ; echo "0 12 * * * /usr/bin/certbot renew --quiet") | crontab -
+        (crontab -l 2>/dev/null || true; echo "0 12 * * * /usr/bin/certbot renew --quiet") | crontab -
         
         # Create renewal hook to restart services
         mkdir -p /etc/letsencrypt/renewal-hooks/deploy
@@ -1960,10 +2242,20 @@ EOF
         
         print_success "Certificate renewal configured"
         print_info "Certificate files are located in: /etc/letsencrypt/live/$CERTBOT_DOMAIN/"
+        print_success "Nginx automatically configured with SSL for $CERTBOT_DOMAIN"
+        print_info "HTTPS is now available at: https://$CERTBOT_DOMAIN"
         
     else
-        print_error "Failed to obtain SSL certificate"
-        print_info "You can try manually later with: certbot certonly --standalone -d $CERTBOT_DOMAIN"
+        print_error "Failed to obtain SSL certificate for $CERTBOT_DOMAIN"
+        print_warning "This is normal if:"
+        print_warning "  - DNS is not yet updated to point to this server"
+        print_warning "  - Port 80 is blocked by upstream firewall"
+        print_warning "  - Domain is behind a CDN or proxy"
+        echo ""
+        print_info "You can try manually later with:"
+        print_info "  sudo certbot --nginx -d $CERTBOT_DOMAIN --email $CERTBOT_EMAIL"
+        print_info "Or use DNS challenge if port 80 is blocked:"
+        print_info "  sudo certbot certonly --manual --preferred-challenges dns -d $CERTBOT_DOMAIN"
     fi
     
     log "Certbot SSL setup completed for domain: $CERTBOT_DOMAIN"
@@ -2259,9 +2551,18 @@ generate_report() {
         printf "%-25s %s\n" "Service" "Status"
         printf "%-25s %s\n" "-------------------------" "------------"
         
-        for service in sshd docker k3s sshguard fail2ban ufw unattended-upgrades; do
+        for service in sshd nginx docker k3s sshguard fail2ban ufw unattended-upgrades; do
             local status
-            if systemctl is-active --quiet "$service" 2>/dev/null; then
+            if [[ "$service" == "sshd" ]]; then
+                # Special handling for SSH service (try both names)
+                if systemctl is-active --quiet sshd 2>/dev/null || systemctl is-active --quiet ssh 2>/dev/null; then
+                    status="✓ Active"
+                elif systemctl is-enabled --quiet sshd 2>/dev/null || systemctl is-enabled --quiet ssh 2>/dev/null; then
+                    status="○ Enabled (not running)"
+                else
+                    status="✗ CRITICAL - Not running!"
+                fi
+            elif systemctl is-active --quiet "$service" 2>/dev/null; then
                 status="✓ Active"
             elif systemctl is-enabled --quiet "$service" 2>/dev/null; then
                 status="○ Enabled (not running)"
@@ -2454,6 +2755,16 @@ generate_report() {
         echo "                         IMPORTANT NOTES"
         echo "==============================================================================="
         echo ""
+        
+        # Check if SSH is working and add critical warning if not
+        if ! systemctl is-active --quiet sshd 2>/dev/null && ! systemctl is-active --quiet ssh 2>/dev/null; then
+            echo "🚨 CRITICAL WARNING: SSH SERVICE IS NOT RUNNING! 🚨"
+            echo "   Your server may be inaccessible via SSH!"
+            echo "   You may need console access to fix this."
+            echo "   See SSH recovery steps in the troubleshooting section below."
+            echo ""
+        fi
+        
         echo "1. SAVE THIS REPORT SECURELY - It contains your custom port configuration"
         echo ""
         echo "2. SSH Access:"
@@ -2568,15 +2879,15 @@ main() {
     # CRITICAL SECURITY WARNING
     echo ""
     print_error "╔══════════════════════════════════════════════════════════════════════════════╗"
-    print_error "║                        ⚠️  SECURITY WARNING ⚠️                           ║"
-    print_error "║                                                                            ║"
-    print_error "║  This script DISABLES direct root SSH login for security!                 ║"
-    print_error "║  You MUST have SSH keys ready before running in non-interactive mode.     ║"
-    print_error "║                                                                            ║"
-    print_error "║  Required for auto mode: --admin-user <name> --admin-key <key>            ║"
-    print_error "║  Interactive mode will prompt for SSH key.                                ║"
-    print_error "║                                                                            ║"
-    print_error "║  WITHOUT SSH KEYS: You will be LOCKED OUT of your server!                 ║"
+    print_error "║                        ⚠️  SECURITY WARNING ⚠️                               ║"
+    print_error "║                                                                              ║"
+    print_error "║  This script DISABLES direct root SSH login for security!                    ║"
+    print_error "║  You MUST have SSH keys ready before running in non-interactive mode.        ║"
+    print_error "║                                                                              ║"
+    print_error "║  Required for auto mode: --admin-user <name> --admin-key <key>               ║"
+    print_error "║  Interactive mode will prompt for SSH key.                                   ║"
+    print_error "║                                                                              ║"
+    print_error "║  WITHOUT SSH KEYS: You will be LOCKED OUT of your server!                    ║"
     print_error "╚══════════════════════════════════════════════════════════════════════════════╝"
     echo ""
     
@@ -2673,15 +2984,15 @@ main() {
     # Configure unattended upgrades
     configure_unattended_upgrades
     
-    # Install services
-    install_docker
-    
-    # Install orchestration platform based on choice
+    # Install container runtime and orchestration platform based on choice
     case "$ORCHESTRATOR_CHOICE" in
         "k3s")
+            print_info "Installing k3s (Kubernetes) with containerd runtime..."
             install_k3s
             ;;
         "swarm")
+            print_info "Installing Docker CE + Docker Swarm..."
+            install_docker
             setup_docker_swarm
             ;;
         *)
@@ -2693,28 +3004,36 @@ main() {
     install_sshguard
     install_fail2ban
     
+    # Install Nginx for container routing and Certbot SSL validation
+    install_nginx
+    
     # Setup SSL certificates if configured
     setup_certbot
-    
-    # Configure firewall (before SSH hardening to ensure access)
-    configure_ufw
     
     # Setup admin users (MUST be done before SSH hardening)
     # Admin user is required since we disable root SSH login
     setup_admin_user
     setup_recovery_admin
     
-    # Harden SSH (do this last to avoid lockout)
-    # Root login is disabled - use admin user + sudo
-    harden_ssh
+    # Configure firewall (must allow SSH port before hardening)
+    configure_ufw
     
-    # Post-installation system validation
+    # Generate report (before SSH hardening so root can still access if issues)
+    generate_report
+    
+    # Post-installation system validation (before SSH hardening)
     if [[ "$DRY_RUN" != true ]]; then
         validate_system_state "post_install"
     fi
     
-    # Generate report
-    generate_report
+    # Harden SSH (ABSOLUTE LAST STEP - disables root login)
+    # This is done at the very end after everything is verified working
+    # Root login is disabled - use admin user + sudo from this point forward
+    print_header "FINAL STEP: SSH HARDENING"
+    print_warning "About to disable root SSH login and switch to port ${PORT_MAP[ssh]}"
+    print_warning "Admin user ${ADMIN_USERNAME} must have working SSH key authentication"
+    echo ""
+    harden_ssh
     
     # Final message
     print_header "SETUP COMPLETE"
