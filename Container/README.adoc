@@ -1,6 +1,6 @@
-= Ubuntu Server Setup Script
+
 :toc: left
-:toclevels: 3
+:toclevels: 2
 :sectnums:
 :sectnumlevels: 4
 :icons: font
@@ -8,26 +8,28 @@
 :imagesdir: images
 :doctype: article
 
-== Overview
 
-The Ubuntu Server Setup Script is a comprehensive, production-ready automation tool designed to transform a fresh Ubuntu server installation into a secure, hardened, and fully-configured system. It provides enterprise-grade security features, container orchestration, intrusion prevention, and SSL certificate management with minimal user intervention.
+= Container Host Setup Script
 
 [.lead]
 *Features:* Docker CE • k3s/Swarm (User Choice) • SSHGuard • Fail2Ban • Certbot • UFW Firewall • SSH Hardening • Admin User Security • Unattended Upgrades
 
-== Table of Contents
+== Purpose
 
-. <<overview>>
-. <<quick-start>>  
-. <<features>>
-. <<installation>>
-. <<usage>>
-. <<configuration>>
-. <<security>>
-. <<troubleshooting>>
-. <<related-scripts>>
-. <<technical-details>>
-. <<license>>
+This script should be run on a fresh Ubuntu server installation (20.04 or newer),
+it sets up a secure, production-ready container host with the following features:
+
+- Container platform: k3s (default) or Docker CE + Swarm
+- Nginx as a reverse proxy / container router
+- SSH hardening (disables root login, enforces key auth, custom port)
+- Brute-force protection: SSHGuard and Fail2Ban
+- UFW firewall with minimal open ports
+- Certbot (optional) for automatic HTTPS via Nginx
+- Unattended upgrades and basic system hardening
+
+At the end of the run a detailed report is generated with access details, custom
+ports, and service statuses.
+
 
 == Quick Start
 
@@ -46,15 +48,34 @@ sudo ./ubuntu-server-setup.sh --yes --admin-user containeruser --admin-key "ssh-
 sudo ./ubuntu-server-setup.sh --dry-run
 ----
 
-IMPORTANT: This script must be run as root (using `sudo`) and requires Ubuntu 20.04 or newer.
 
-NOTE: Choose between **k3s** (Kubernetes with containerd) or **Docker Swarm** (Docker CE + Swarm). These are mutually exclusive installations.
+== Important Options
 
-WARNING: **CRITICAL SECURITY WARNING** - This script DISABLES direct root SSH login! You MUST have SSH keys ready. Without them, you will be **LOCKED OUT** of your server!
+- `-y, --yes` : Auto-confirm prompts (requires `--admin-user` and `--admin-key`).
+- `-n, --dry-run` : Show planned actions without applying changes.
+- `-r, --report-only` : Generate the saved installation report.
+- `--admin-user <username>` : Non-root admin account to create.
+- `--admin-key <ssh-public-key>` : SSH public key for the admin user.
+- `--recovery-key <ssh-public-key>` : Optional recovery admin key.
 
-* **Interactive mode**: Will prompt for SSH key during setup
-* **Auto mode**: Requires `--admin-user` and `--admin-key` parameters
-* **No SSH keys**: Server becomes inaccessible - recovery requires console access!
+== Key Warnings (Read Carefully)
+
+- The script DISABLES direct root SSH login and also disables password authentication.
+  You MUST ensure an admin user with a working SSH public key is configured before the
+  final SSH hardening step or you will be locked out.
+- In automatic mode (`--yes`) `--admin-user` and `--admin-key` are required.
+- Keep the generated report (saved under `/root/server-setup-*.report`) — it contains
+  custom ports and access details.
+
+== Files and Outputs
+
+- Script: `ubuntu-server-setup.sh`
+- Saved port configuration: `/etc/server-ports.conf` (SSH and k3s API ports)
+- Log file: `/var/log/ubuntu-server-setup.log`
+- Generated reports: `/root/server-setup-<timestamp>.report`
+- Error/debug artifacts (on failure): `.ubuntu-server-setup.error` and `.ubuntu-server-setup.debug` in the script directory
+
+
 
 == Features
 
@@ -70,7 +91,7 @@ WARNING: **CRITICAL SECURITY WARNING** - This script DISABLES direct root SSH lo
 * **k3s** - Lightweight Kubernetes with containerd runtime
 * **Docker Swarm** - Docker CE with Swarm orchestration
 * **Security Hardening:**
-  - Pod Security Policies (PSP) for k3s
+  - Pod Security Admission (PSA) for k3s (replaces deprecated PodSecurityPolicy)
   - Network Security Policies
   - Admission Controllers (NodeRestriction, ResourceQuota)
   - RBAC enforcement
@@ -695,7 +716,7 @@ systemctl restart sshd
 
 ==== SSH Lockout Recovery
 
-IMPORTANT: If you lose SSH access, use one of these recovery methods:
+*IMPORTANT*: If you lose SSH access, use one of these recovery methods:
 
 **Option 1: Recovery Admin Account**
 [source,bash]
@@ -804,6 +825,19 @@ cat .ubuntu-server-setup.error
 cat .ubuntu-server-setup.debug
 ----
 
+===== Installed Services
+[cols="2,1,2,2"]  
+|===
+|Service |Port |Purpose |Dependencies
+
+|Docker CE |2376 |Container Runtime |containerd, runc
+|k3s |6443 |Kubernetes |containerd, CNI plugins
+|Fail2Ban |N/A |Intrusion Prevention |iptables, systemd
+|SSHGuard |N/A |SSH Protection |ufw, iptables
+|UFW |N/A |Firewall |iptables, netfilter
+|Certbot |80/443 |SSL Certificates |python3, nginx/apache
+|===
+
 == Related Scripts
 
 === Container Management Scripts
@@ -871,126 +905,3 @@ sudo ./Generate_Compact_System_Status.sh
 cd ../System_Configurations
 sudo ./configure-unattended-upgrades/configure-unattended-upgrades.sh
 ----
-
-== Technical Details
-
-=== Architecture
-
-==== Script Structure
-[source]
-----
-ubuntu-server-setup.sh
-├── Constants and Configuration
-├── Error Handling & Logging  
-├── Utility Functions
-├── System Validation
-├── Package Management
-├── Service Installation
-│   ├── Docker CE Setup
-│   ├── k3s Installation & Hardening
-│   ├── Fail2Ban Configuration
-│   ├── SSHGuard Setup
-│   ├── UFW Firewall Setup
-│   └── SSL Certificate Management
-├── SSH Hardening
-├── System Configuration
-└── Reporting and Validation
-----
-
-==== Dependencies
-
-===== Required Packages
-[cols="2,1,3"]
-|===
-|Package |Type |Purpose
-
-|`curl` |System |Package downloads
-|`wget` |System |File retrieval
-|`apt-transport-https` |System |Secure package sources
-|`ca-certificates` |System |SSL certificate validation
-|`gnupg` |System |Package signature verification
-|`lsb-release` |System |Distribution detection
-|===
-
-===== Installed Services
-[cols="2,1,2,2"]  
-|===
-|Service |Port |Purpose |Dependencies
-
-|Docker CE |2376 |Container Runtime |containerd, runc
-|k3s |6443 |Kubernetes |containerd, CNI plugins
-|Fail2Ban |N/A |Intrusion Prevention |iptables, systemd
-|SSHGuard |N/A |SSH Protection |ufw, iptables
-|UFW |N/A |Firewall |iptables, netfilter
-|Certbot |80/443 |SSL Certificates |python3, nginx/apache
-|===
-
-=== File System Layout
-
-==== Configuration Files
-[source]
-----
-/etc/
-├── server-ports.conf              # Port configuration
-├── docker/daemon.json             # Docker configuration  
-├── fail2ban/jail.local            # Fail2Ban rules
-├── ssh/sshd_config               # SSH hardening
-├── ufw/                          # Firewall rules
-├── letsencrypt/                  # SSL certificates
-└── systemd/system/
-    ├── k3s.service               # k3s service
-    └── k3s.service.d/override.conf
-----
-
-==== Log Files
-[source]
-----
-/var/log/
-├── ubuntu-server-setup.log       # Installation log
-├── k3s-audit.log                 # k3s audit events
-├── fail2ban.log                  # Intrusion attempts
-├── auth.log                      # SSH authentication
-└── ufw.log                       # Firewall events
-----
-
-==== Runtime Files
-[source]
-----
-/var/lib/
-├── rancher/k3s/                  # k3s data directory
-├── docker/                       # Docker runtime data
-└── fail2ban/                     # Fail2Ban state
-----
-
-=== Performance Considerations
-
-==== Resource Usage
-[cols="2,1,1,2"]
-|===
-|Service |Memory |CPU |Disk
-
-|Docker |~100MB |Low |Variable
-|k3s |~512MB |Medium |~1GB  
-|Fail2Ban |~50MB |Low |~10MB
-|SSHGuard |~20MB |Low |~5MB
-|UFW |~10MB |Low |~1MB
-|===
-
-==== Optimization Settings
-* **Docker**: Overlay2 storage driver, log rotation
-* **k3s**: Embedded etcd, minimal components  
-* **Fail2Ban**: Optimized regex patterns, reasonable ban times
-* **System**: Kernel parameter tuning, service hardening
-
-=== Security Considerations
-
-==== Attack Surface Reduction
-1. **Minimal Service Exposure**: Only required ports open
-2. **Non-Standard Ports**: Reduces automated scanning success
-3. **Rate Limiting**: Connection throttling and attempt limits
-4. **Intrusion Detection**: Real-time monitoring and response
-
-==== Compliance Features
-* **CIS Benchmarks**: Kubernetes and Docker hardening
-* **NIST Guidelines**: SSH and system security standards  
-* **Industry Best Practices**: Firewall and monitoring setup

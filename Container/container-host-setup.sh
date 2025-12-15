@@ -68,7 +68,6 @@ DRY_RUN=false
 AUTO_YES=false
 REPORT_ONLY=false
 VERBOSE=false
-SSH_PUBLIC_KEY=""
 
 # Wizard configuration variables
 CERTBOT_EMAIL=""

@@ -149,7 +149,7 @@ echo "Collecting system information..."
     echo ""
     echo "CPU Frequency Usage (% of active time spent at each frequency since reboot):"
     echo "The sum of percentages can be lower than 100% if the CPU was idle,deep sleep for some time."
-    uptime_ticks=$(echo "$uptime_seconds * 100" | bc)
+
     for ((i=0; i<cpu_cores; i++)); do
         echo "CPU$i:"
         time_in_state=$(adb shell cat /sys/devices/system/cpu/cpu$i/cpufreq/stats/time_in_state 2>/dev/null)
