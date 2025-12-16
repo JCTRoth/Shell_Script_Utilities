@@ -77,8 +77,10 @@ ORCHESTRATOR_CHOICE="k3s"  # Options: k3s, swarm
 
 # Admin user configuration (enhanced security - no direct root SSH)
 ADMIN_USERNAME=""
+ADMIN_PASSWORD=""
 ADMIN_SSH_KEY=""
 RECOVERY_ADMIN_USERNAME="recovery_admin"
+RECOVERY_ADMIN_PASSWORD=""
 RECOVERY_ADMIN_SSH_KEY=""
 
 # =============================================================================
@@ -390,6 +392,7 @@ ${BOLD}OPTIONS:${NC}
     -r, --report-only        Generate report without installing anything
     --verbose                Enable verbose output
     --admin-user <username>  Admin username for SSH access (required in auto mode)
+    --admin-password <password>  Admin password for sudo (required in auto mode)
     --admin-key <key>        SSH public key for admin user (required in auto mode)
     --recovery-key <key>     SSH public key for recovery admin (optional)
     --ssh-key <key>          DEPRECATED: Use --admin-key instead
@@ -399,7 +402,7 @@ ${BOLD}EXAMPLES:${NC}
     sudo $SCRIPT_NAME
 
     # Non-interactive setup with defaults
-    sudo $SCRIPT_NAME --yes --admin-user containeruser --admin-key "ssh-ed25519 AAAA..."
+    sudo $SCRIPT_NAME --yes --admin-user containeruser --admin-password "mypassword" --admin-key "ssh-ed25519 AAAA..."
 
     # Dry run to see what would be installed
     sudo $SCRIPT_NAME --dry-run
@@ -408,7 +411,7 @@ ${BOLD}EXAMPLES:${NC}
     sudo $SCRIPT_NAME --report-only
 
     # Full automated setup with admin and recovery accounts
-    sudo $SCRIPT_NAME --yes --admin-user containeruser --admin-key "ssh-ed25519 AAAA..." --recovery-key "ssh-rsa BBBB..."
+    sudo $SCRIPT_NAME --yes --admin-user containeruser --admin-password "mypassword" --admin-key "ssh-ed25519 AAAA..." --recovery-key "ssh-rsa BBBB..."
 
 ${BOLD}SERVICES INSTALLED:${NC}
     • Container Platform: k3s (Kubernetes + containerd) OR Docker CE + Swarm
@@ -422,8 +425,8 @@ ${BOLD}SERVICES INSTALLED:${NC}
 
 ${BOLD}SECURITY MODEL:${NC}
     • Direct root SSH login is DISABLED (PermitRootLogin no)
-    • Admin user required with SSH key authentication
-    • Root access via sudo elevation only
+    • Admin user required with SSH key authentication and password for sudo
+    • Root access via sudo elevation (requires admin password)
     • Optional recovery admin for failsafe access
 
 ${BOLD}SECURITY FEATURES:${NC}
@@ -522,6 +525,10 @@ setup_wizard() {
             print_error "Admin username required in auto-yes mode. Use --admin-user option."
             exit 1
         fi
+        if [[ -z "$ADMIN_PASSWORD" ]]; then
+            print_error "Admin password required in auto-yes mode. Use --admin-password option."
+            exit 1
+        fi
         return
     fi
     
@@ -552,6 +559,31 @@ setup_wizard() {
         else
             ADMIN_USERNAME="$admin_name"
             print_success "Admin username set: $ADMIN_USERNAME"
+            break
+        fi
+    done
+    
+    # Admin Password
+    echo ""
+    print_info "Set a strong password for the admin user."
+    print_info "This password will be required for sudo operations."
+    echo ""
+    
+    while true; do
+        read -r -s -p "$(echo -e "${CYAN}Enter password for $ADMIN_USERNAME: ${NC}")" admin_pass
+        echo ""
+        read -r -s -p "$(echo -e "${CYAN}Confirm password: ${NC}")" admin_pass_confirm
+        echo ""
+        
+        if [[ -z "$admin_pass" ]]; then
+            print_warning "Password cannot be empty."
+        elif [[ "$admin_pass" != "$admin_pass_confirm" ]]; then
+            print_warning "Passwords do not match. Try again."
+        elif [[ ${#admin_pass} -lt 8 ]]; then
+            print_warning "Password must be at least 8 characters long."
+        else
+            ADMIN_PASSWORD="$admin_pass"
+            print_success "Admin password set"
             break
         fi
     done
@@ -837,9 +869,15 @@ setup_admin_user() {
     if id "$admin_user" &>/dev/null; then
         print_warning "User $admin_user already exists"
     else
-        # Create user with home directory, no password (SSH key only)
+        # Create user with home directory
         useradd -m -s /bin/bash "$admin_user"
         print_success "Created user: $admin_user"
+        
+        # Set password for sudo access
+        if [[ -n "$ADMIN_PASSWORD" ]]; then
+            echo "$admin_user:$ADMIN_PASSWORD" | chpasswd
+            print_success "Set password for $admin_user"
+        fi
     fi
     
     # Add user to docker group for container management
@@ -2841,6 +2879,10 @@ main() {
                 ;;
             --admin-user)
                 ADMIN_USERNAME="$2"
+                shift 2
+                ;;
+            --admin-password)
+                ADMIN_PASSWORD="$2"
                 shift 2
                 ;;
             --admin-key)

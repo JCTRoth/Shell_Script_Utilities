@@ -42,7 +42,7 @@ chmod +x ubuntu-server-setup.sh
 sudo ./ubuntu-server-setup.sh
 
 # Non-interactive setup with admin user
-sudo ./ubuntu-server-setup.sh --yes --admin-user containeruser --admin-key "ssh-ed25519 AAAA..."
+sudo ./ubuntu-server-setup.sh --yes --admin-user containeruser --admin-password "mypassword" --admin-key "ssh-ed25519 AAAA..."
 
 # Preview what would be installed
 sudo ./ubuntu-server-setup.sh --dry-run
@@ -51,19 +51,20 @@ sudo ./ubuntu-server-setup.sh --dry-run
 
 == Important Options
 
-- `-y, --yes` : Auto-confirm prompts (requires `--admin-user` and `--admin-key`).
+- `-y, --yes` : Auto-confirm prompts (requires `--admin-user`, `--admin-password`, and `--admin-key`).
 - `-n, --dry-run` : Show planned actions without applying changes.
 - `-r, --report-only` : Generate the saved installation report.
 - `--admin-user <username>` : Non-root admin account to create.
+- `--admin-password <password>` : Password for the admin user (required for sudo).
 - `--admin-key <ssh-public-key>` : SSH public key for the admin user.
 - `--recovery-key <ssh-public-key>` : Optional recovery admin key.
 
 == Key Warnings (Read Carefully)
 
 - The script DISABLES direct root SSH login and also disables password authentication.
-  You MUST ensure an admin user with a working SSH public key is configured before the
+  You MUST ensure an admin user with a working SSH public key AND password is configured before the
   final SSH hardening step or you will be locked out.
-- In automatic mode (`--yes`) `--admin-user` and `--admin-key` are required.
+- In automatic mode (`--yes`) `--admin-user`, `--admin-password`, and `--admin-key` are required.
 - Keep the generated report (saved under `/root/server-setup-*.report`) — it contains
   custom ports and access details.
 
