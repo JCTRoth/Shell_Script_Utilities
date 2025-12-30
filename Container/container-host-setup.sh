@@ -506,6 +506,203 @@ backup_file() {
 }
 
 # =============================================================================
+# DOCKER NON-ROOT USER HELPER
+# =============================================================================
+# Reference: https://docs.docker.com/engine/install/linux-postinstall/
+
+show_docker_nonroot_help() {
+    cat << 'EOF'
+
+================================================================================
+                    DOCKER WITHOUT SUDO - COMPREHENSIVE GUIDE
+================================================================================
+
+This script configures Docker to run without sudo by adding admin users to the
+docker group. This guide explains how it works, the security implications, and
+how to troubleshoot issues.
+
+1. HOW DOCKER WITHOUT SUDO WORKS
+================================================================================
+
+The Docker daemon runs as root and binds to a Unix socket at /var/run/docker.sock
+
+Default Socket Permissions:
+  - Owner: root:root
+  - Permission: 660 (rw-rw----)
+  
+To run docker commands without sudo, the socket needs to be accessible to users.
+This is achieved by:
+  
+  a) Creating a docker group
+  b) Making the socket owned by root:docker (done by Docker automatically)
+  c) Adding users to the docker group
+  
+When a user is in the docker group, they can access the socket and interact with
+the Docker daemon without using sudo.
+
+Socket Location:
+  - /var/run/docker.sock (Unix socket for local connections)
+
+2. SECURITY IMPLICATIONS
+================================================================================
+
+⚠️  WARNING: Docker group membership grants root-level privileges! ⚠️
+
+Why? Because users in the docker group can:
+  - Run ANY container with ANY privileges
+  - Mount host volumes with unrestricted access
+  - Access the Docker API without authentication
+  - Effectively escalate to root without password
+
+Example attack vector:
+  docker run -v /etc:/etc -it ubuntu bash
+  # User now has access to /etc on the host as root!
+
+ONLY add trusted users to the docker group.
+Reference: https://docs.docker.com/engine/security/#docker-daemon-attack-surface
+
+3. SETUP PROCESS (Done by this script)
+================================================================================
+
+Step 1: Create docker group
+  $ sudo groupadd docker
+
+Step 2: Add user to docker group
+  $ sudo usermod -aG docker <username>
+
+Step 3: Verify group membership
+  $ groups <username>
+  # Should show: ... docker ...
+
+Step 4: Activate group membership
+  - Option A: Logout and login again
+  - Option B: Run in current session: newgrp docker
+  - Option C: Start new shell: su - <username>
+
+Step 5: Verify docker access
+  $ docker run hello-world
+  # Should work without sudo
+
+4. ACTIVATING DOCKER GROUP MEMBERSHIP
+================================================================================
+
+After this script completes, the user is added to the docker group, but
+the change won't take effect until the group membership is re-evaluated.
+
+Option 1: Log out and log back in (recommended)
+  $ exit  # Exit SSH session
+  # Log back in with SSH
+
+Option 2: Activate in current session
+  $ newgrp docker
+  # Shell subprocess with docker group membership
+  $ docker ps  # Should work now
+  $ exit       # Return to original shell
+
+Option 3: Use sudo to run as user with docker group
+  $ sudo -u <username> newgrp docker
+  $ docker ps
+
+5. TROUBLESHOOTING PERMISSION ERRORS
+================================================================================
+
+Problem: "Got permission denied while trying to connect to the Docker daemon"
+Error: "permission denied while trying to connect to Docker daemon socket"
+
+Cause: User is not in docker group or membership hasn't been activated.
+
+Solution:
+
+  a) Verify user is in docker group:
+    $ id <username>
+    # Should show "groups=...,docker"
+
+  b) Activate group membership if needed:
+    $ newgrp docker
+    $ docker ps
+
+  c) Logout and login again:
+    $ exit
+    # SSH back in and try again
+
+  d) Check socket permissions:
+    $ ls -la /var/run/docker.sock
+    # Should show: srw-rw---- 1 root docker
+
+Problem: "WARNING: Error loading config file: ~/.docker/config.json permission denied"
+
+Cause: ~/.docker directory has wrong permissions from previous sudo usage.
+
+Solution:
+
+  Option 1: Remove the directory (will be recreated):
+    $ rm -r ~/.docker
+
+  Option 2: Fix permissions:
+    $ sudo chown "$USER":"$USER" ~/.docker -R
+    $ sudo chmod g+rwx ~/.docker -R
+
+6. VERIFY INSTALLATION
+================================================================================
+
+Test that docker works without sudo:
+
+  $ docker run hello-world
+  
+  # Output should include:
+  # "Hello from Docker!
+  #  This message shows that your installation appears to be working correctly."
+
+Check docker daemon socket:
+
+  $ ls -la /var/run/docker.sock
+  # Should show: srw-rw---- 1 root docker
+
+Check group membership:
+
+  $ groups $USER
+  # Should include: docker
+
+7. BEST PRACTICES
+================================================================================
+
+Security:
+  ✓ Only add trusted users to docker group
+  ✓ Consider using Rootless Docker for untrusted environments
+  ✓ Review running containers regularly
+  ✓ Use strong container image sources
+
+Monitoring:
+  ✓ Monitor docker socket access
+  ✓ Check docker logs: journalctl -u docker
+  ✓ Review running containers: docker ps
+
+Maintenance:
+  ✓ Keep Docker and images updated
+  ✓ Remove unused images: docker image prune
+  ✓ Remove unused containers: docker container prune
+  ✓ Monitor disk usage: docker system df
+
+8. REFERENCES
+================================================================================
+
+Official Documentation:
+  https://docs.docker.com/engine/install/linux-postinstall/
+
+Docker Security:
+  https://docs.docker.com/engine/security/
+
+Rootless Docker (alternative approach):
+  https://docs.docker.com/engine/security/rootless/
+
+Linux Post-Installation:
+  https://docs.docker.com/engine/install/linux-postinstall/
+
+================================================================================
+EOF
+}
+
+# =============================================================================
 # SETUP WIZARD
 # =============================================================================
 
@@ -880,10 +1077,28 @@ setup_admin_user() {
         fi
     fi
     
-    # Add user to docker group for container management
+    # Add user to docker group for container management (non-root docker access)
+    # ========================================================================
+    # Security Note: Docker group membership grants root-level privileges
+    # because the docker socket is owned by root and accessible by the group.
+    # See: https://docs.docker.com/engine/security/#docker-daemon-attack-surface
+    # 
+    # How it works:
+    # - Docker daemon binds to /var/run/docker.sock (Unix socket)
+    # - Socket is owned by root:docker
+    # - Users in docker group can interact with the socket
+    # - This effectively grants root access without requiring password
+    # 
+    # Usage:
+    # - Members can run: docker ps, docker run, etc. without sudo
+    # - Must log out and back in (or use 'newgrp docker') to activate
+    # ========================================================================
+    
     if getent group docker &>/dev/null; then
         usermod -aG docker "$admin_user"
-        print_success "Added $admin_user to docker group"
+        print_success "Added $admin_user to docker group (non-root docker access)"
+    else
+        print_warning "Docker group does not exist. Please run install_docker first."
     fi
     
     # Add user to sudo group
@@ -931,7 +1146,44 @@ setup_admin_user() {
         chmod 600 "$auth_keys"
     fi
     
-    log "Admin user $admin_user setup completed"
+    # Fix permission issues from previous sudo usage with docker CLI
+    # ================================================================
+    # If user ran 'docker' commands with sudo before being added to docker group,
+    # the ~/.docker directory may have incorrect permissions.
+    # See: https://docs.docker.com/engine/install/linux-postinstall/
+    print_step "Docker config permissions for $admin_user (from previous sudo usage)..."
+    
+    local docker_config="/home/$admin_user/.docker"
+    if [[ -d "$docker_config" ]]; then
+        # Fix ownership and permissions
+        chown "$admin_user:$admin_user" "$docker_config" -R
+        chmod g+rwx "$docker_config" -R
+        print_success "Fixed Docker config permissions"
+    fi
+    
+    # Print docker setup instructions
+    echo ""
+    print_header "DOCKER NON-ROOT USER SETUP FOR $admin_user"
+    print_info "Docker group has been added. To activate docker access:"
+    print_info ""
+    print_info "OPTION 1: Logout and login again"
+    print_info "  - Exit SSH session"
+    print_info "  - Log back in to activate group membership"
+    print_info ""
+    print_info "OPTION 2: Activate immediately in current session"
+    print_info "  - Run: newgrp docker"
+    print_info ""
+    print_info "VERIFY: Test docker access"
+    print_info "  - Run: docker run hello-world"
+    print_info ""
+    print_warning "SECURITY WARNING:"
+    print_warning "Adding user to docker group grants root-level privileges!"
+    print_warning "Only add trusted users. Members can escalate to root."
+    print_info ""
+    print_info "Reference: https://docs.docker.com/engine/install/linux-postinstall/"
+    echo ""
+    
+    log "Admin user $admin_user setup completed with docker group access configured"
     print_success "Admin user $admin_user configured successfully"
 }
 
@@ -1262,6 +1514,16 @@ EOF
     run_cmd "systemctl enable docker"
     run_cmd "systemctl start docker"
     
+    # Create docker group if it doesn't exist
+    # Note: Most package managers create this automatically
+    print_step "Ensuring docker group exists..."
+    if ! getent group docker &>/dev/null; then
+        groupadd docker
+        print_success "Created docker group"
+    else
+        print_info "Docker group already exists"
+    fi
+    
     # Verify installation
     if docker run --rm hello-world &>/dev/null; then
         print_success "Docker installed and working"
@@ -1269,8 +1531,29 @@ EOF
         print_warning "Docker installed but test container failed"
     fi
     
+    # Print important security and usage information
+    echo ""
+    print_header "DOCKER NON-ROOT USER ACCESS"
+    print_warning "SECURITY NOTE: The docker group grants root-level privileges!"
+    print_info "Users in the docker group can escalate to root without a password."
+    print_info "Only add trusted users to this group."
+    print_info ""
+    print_info "Reference: https://docs.docker.com/engine/security/#docker-daemon-attack-surface"
+    echo ""
+    print_info "To enable non-root docker access for users:"
+    print_info "  1. User must be added to docker group (done during admin setup)"
+    print_info "  2. User must log out and log back in to activate group membership"
+    print_info "  3. Or activate immediately: newgrp docker"
+    print_info ""
+    print_info "Verify docker access: docker run hello-world"
+    print_info ""
+    print_info "Fix permission issues from previous sudo usage:"
+    print_info "  - Remove ~/.docker: rm -r ~/.docker"
+    print_info "  - Or fix permissions: sudo chown \$USER:\$USER ~/.docker -R && chmod g+rwx ~/.docker -R"
+    echo ""
+    
     docker --version
-    log "Docker installation completed"
+    log "Docker installation completed with docker group configured"
 }
 
 # =============================================================================
