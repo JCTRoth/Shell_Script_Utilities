@@ -31,7 +31,12 @@ A collection of shell scripts for system administration, backups, container mana
   * MacOs/ - macOS utilities (Xcode, NTFS drives, installs).
 
 === Program_Setups/ - Setup scripts for software stacks.
-  * setup_fish.sh, setup_LAMP.sh, setup_nodeJs.sh - Install common programs.
+  * setup_fish.sh - Installs and configures the Fish shell.
+  * setup_LAMP.sh - Sets up Linux, Apache, MySQL, PHP stack.
+  * setup_nodeJs.sh - Installs Node.js from source with version selection.
+    ** Supports installing specific versions (e.g., v18.17.0) or latest in a major series (e.g., 20 for latest 20.x).
+    ** Automatically detects system architecture and removes conflicting versions.
+    ** Creates symlinks for node, npm, npx, and nodejs commands.
   * Pine64_GPIO_Setup/ - GPIO libraries for Pine64 hardware.
 
 === rulesD_Problems/ - Udev rules for hardware issues.
