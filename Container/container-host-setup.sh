@@ -16,24 +16,6 @@ set -euo pipefail
 # CONSTANTS AND CONFIGURATION
 # =============================================================================
 
-# Function to check command success and log errors
-run_cmd() {
-    local cmd="$1"
-    local description="${2:-}"
-
-    if [[ -n "$description" ]]; then
-        log "Running: $description"
-    else
-        log "Running: $cmd"
-    fi
-
-    if ! eval "$cmd"; then
-        log "ERROR: Command failed: $cmd"
-        return 1
-    fi
-
-    log "SUCCESS: Command completed: ${description:-$cmd}"
-}
 
 readonly SCRIPT_NAME="$(basename "$0")"
 readonly SCRIPT_VERSION="1.0"
@@ -191,20 +173,6 @@ cleanup_on_error() {
 trap error_exit ERR
 trap 'print_warning "Script interrupted by user"; cleanup_on_error; exit 130' INT TERM
 
-# Enhanced logging function
-log() {
-    local message="$1"
-    local timestamp
-    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-
-    # Log to file
-    echo "[$timestamp] $message" >> "$LOG_FILE"
-
-    # Also log to console if verbose
-    if [[ "$VERBOSE" == true ]]; then
-        echo "[$timestamp] $message"
-    fi
-}
 
 # Function to check command success and log errors
 run_cmd() {
@@ -1352,8 +1320,15 @@ harden_ssh() {
         print_success "SSH configuration is valid"
     else
         print_error "SSH configuration validation failed!"
-        print_info "Restoring backup..."
-        cp "${sshd_config}.backup."* "$sshd_config" 2>/dev/null || true
+        print_info "Restoring latest backup..."
+        # Restore the most recent backup file if available
+        latest_backup=$(ls -1t "${sshd_config}.backup."* 2>/dev/null | head -1 || true)
+        if [[ -n "$latest_backup" && -f "$latest_backup" ]]; then
+            cp "$latest_backup" "$sshd_config" 2>/dev/null || true
+            print_info "Restored backup: $latest_backup"
+        else
+            print_warning "No backup found to restore"
+        fi
         exit 1
     fi
     
@@ -1703,6 +1678,100 @@ EOF
     print_info "Pod Security Admission enabled (restricted profile)"
     
     log "k3s installation completed with enhanced security - API Port: $k3s_port"
+}
+
+# =============================================================================
+# METALLB INSTALLATION (for bare-metal L2 load-balancing)
+# =============================================================================
+install_metallb() {
+    print_header "METALLB INSTALLATION"
+
+    if [[ "${ORCHESTRATOR_CHOICE:-}" != "k3s" ]]; then
+        print_info "Skipping MetalLB: orchestrator is not k3s"
+        return
+    fi
+
+    if ! command_exists k3s; then
+        print_warning "k3s not found - cannot install MetalLB"
+        return 1
+    fi
+
+    print_step "Installing MetalLB (layer2 mode) into k3s cluster"
+
+    if [[ "$DRY_RUN" == true ]]; then
+        print_info "[DRY-RUN] Would apply MetalLB manifests"
+        return
+    fi
+
+    # Apply MetalLB native manifests (version pinned)
+    # Use the main branch manifest so the script pulls the latest MetalLB version
+    local metallb_manifest_url="https://raw.githubusercontent.com/metallb/metallb/main/config/manifests/metallb-native.yaml"
+    print_info "Applying MetalLB manifest: $metallb_manifest_url"
+    if ! curl -fsSL "$metallb_manifest_url" | k3s kubectl apply -f -; then
+        print_error "Failed to apply MetalLB manifest"
+        return 1
+    fi
+
+    # Create memberlist secret for Metallb
+    print_step "Creating MetalLB memberlist secret"
+    local secret_key
+    secret_key=$(openssl rand -base64 128)
+    echo "Creating memberlist secret (metallb-system)"
+    k3s kubectl create secret generic -n metallb-system memberlist --from-literal=secretkey="$secret_key" --dry-run=client -o yaml | k3s kubectl apply -f -
+
+    # Determine address pool
+    local pool_range
+    if [[ -n "${METALLB_ADDRESS_POOL:-}" ]]; then
+        pool_range="$METALLB_ADDRESS_POOL"
+        print_info "Using METALLB_ADDRESS_POOL from environment: $pool_range"
+    elif [[ "$AUTO_YES" == true ]]; then
+        # Attempt safe default: use host subnet /24 and allocate .240-.250
+        local host_ip
+        host_ip=$(hostname -I | awk '{print $1}')
+        if [[ "$host_ip" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            pool_range="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}.240-${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}.250"
+            print_info "Auto-selected MetalLB pool: $pool_range"
+        else
+            print_warning "Cannot auto-determine host IP for MetalLB address pool"
+        fi
+    else
+        # Prompt user for pool
+        read -r -p "Enter MetalLB IP range (e.g. 192.168.1.240-192.168.1.250) or CIDR: " pool_range
+    fi
+
+    if [[ -z "$pool_range" ]]; then
+        print_warning "No MetalLB address pool configured - skipping address pool setup"
+        print_info "You can create an IPAddressPool later with: k3s kubectl apply -f metallb-pool.yaml"
+        return 0
+    fi
+
+    # Validate simple range pattern (start-end) or CIDR
+    if ! [[ "$pool_range" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+-[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] && ! [[ "$pool_range" =~ /[0-9]+$ ]]; then
+        print_warning "Address pool '$pool_range' does not match expected formats. It may still work if valid."
+    fi
+
+    # Create IPAddressPool and L2Advertisement resources (MetalLB Native API)
+    cat <<EOF | k3s kubectl apply -f -
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: default-addresspool
+  namespace: metallb-system
+spec:
+  addresses:
+  - $pool_range
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: l2advert
+  namespace: metallb-system
+spec: {}
+EOF
+
+    print_success "MetalLB installed and address pool configured (default-addresspool)"
+    print_warning "Verify MetalLB: k3s kubectl get pods -n metallb-system && k3s kubectl get ipaddresspools -n metallb-system"
+    log "MetalLB installation attempted with pool: $pool_range"
 }
 
 # =============================================================================
@@ -3313,6 +3382,8 @@ main() {
         "k3s")
             print_info "Installing k3s (Kubernetes) with containerd runtime..."
             install_k3s
+            # Install MetalLB for bare-metal load balancing (optional)
+            install_metallb
             ;;
         "swarm")
             print_info "Installing Docker CE + Docker Swarm..."
