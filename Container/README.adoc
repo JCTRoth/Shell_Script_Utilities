@@ -11,6 +11,11 @@
 
 = Container Host Setup Script
 
+Converts a empty Ubuntu System into a container host.
+Sets up a preconfigured container-host running Kubernetes or Docker Swarm (selectable).
+Sets up security measures and automated certificate renewing.
+And more.
+
 [.lead]
 *Features:* Docker CE • k3s/Swarm (User Choice) • SSHGuard • Fail2Ban • Certbot • UFW Firewall • SSH Hardening • Admin User Security • Unattended Upgrades
 
