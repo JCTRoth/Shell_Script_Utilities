@@ -382,11 +382,10 @@ ${BOLD}EXAMPLES:${NC}
     sudo $SCRIPT_NAME --yes --admin-user containeruser --admin-password "mypassword" --admin-key "ssh-ed25519 AAAA..." --recovery-key "ssh-rsa BBBB..."
 
 ${BOLD}SERVICES INSTALLED:${NC}
-    • Container Platform: k3s (Kubernetes + containerd) OR Docker CE + Swarm
-    • Nginx (Web server & reverse proxy for containers)
+    • Container Platform: k3s (Kubernetes + containerd + Traefik Ingress) OR Docker CE + Swarm
     • SSHGuard (Brute-force protection)
     • Fail2Ban (Intrusion prevention system)
-    • Certbot (SSL certificates via Nginx)
+    • Nginx + Certbot (Swarm mode only)
     • UFW (Uncomplicated Firewall)
     • Unattended Upgrades (Automatic security updates)
     • htop (System monitoring)
@@ -783,37 +782,42 @@ setup_wizard() {
         esac
     done
     
-    # Certbot Configuration
-    echo ""
-    print_step "SSL Certificate Configuration (Certbot)"
-    echo ""
-    
-    if confirm "Do you want to set up SSL certificates with Certbot?"; then
-        CERTBOT_SETUP=true
+    if [[ "$ORCHESTRATOR_CHOICE" == "swarm" ]]; then
+        # Certbot Configuration (Swarm mode only)
+        echo ""
+        print_step "SSL Certificate Configuration (Certbot)"
+        echo ""
         
-        while true; do
-            read -r -p "$(echo -e "${CYAN}Enter your email address for Let's Encrypt: ${NC}")" cert_email
-            if [[ -z "$cert_email" ]]; then
-                print_warning "Email is required for Let's Encrypt. Try again."
-            elif [[ ! "$cert_email" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
-                print_warning "Invalid email format. Try again."
+        if confirm "Do you want to set up SSL certificates with Certbot?"; then
+            CERTBOT_SETUP=true
+            
+            while true; do
+                read -r -p "$(echo -e "${CYAN}Enter your email address for Let's Encrypt: ${NC}")" cert_email
+                if [[ -z "$cert_email" ]]; then
+                    print_warning "Email is required for Let's Encrypt. Try again."
+                elif [[ ! "$cert_email" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
+                    print_warning "Invalid email format. Try again."
+                else
+                    CERTBOT_EMAIL="$cert_email"
+                    break
+                fi
+            done
+            
+            read -r -p "$(echo -e "${CYAN}Enter domain name for SSL certificate: ${NC}")" cert_domain
+            if [[ -n "$cert_domain" ]]; then
+                CERTBOT_DOMAIN="$cert_domain"
+                print_success "SSL certificate will be obtained for: $CERTBOT_DOMAIN"
             else
-                CERTBOT_EMAIL="$cert_email"
-                break
+                print_warning "No domain specified. SSL setup will be skipped."
+                CERTBOT_SETUP=false
             fi
-        done
-        
-        read -r -p "$(echo -e "${CYAN}Enter domain name for SSL certificate: ${NC}")" cert_domain
-        if [[ -n "$cert_domain" ]]; then
-            CERTBOT_DOMAIN="$cert_domain"
-            print_success "SSL certificate will be obtained for: $CERTBOT_DOMAIN"
         else
-            print_warning "No domain specified. SSL setup will be skipped."
             CERTBOT_SETUP=false
+            print_info "SSL certificate setup skipped"
         fi
     else
         CERTBOT_SETUP=false
-        print_info "SSL certificate setup skipped"
+        print_info "k3s mode selected: Traefik handles Ingress natively; skipping host-level Certbot setup."
     fi
     
     echo ""
@@ -1243,6 +1247,68 @@ setup_recovery_admin() {
     print_success "Recovery admin $recovery_user configured successfully"
 }
 
+configure_kubectl_access() {
+    print_header "KUBECTL USER ACCESS SETUP"
+
+    if [[ "${ORCHESTRATOR_CHOICE:-k3s}" != "k3s" ]]; then
+        print_info "Skipping kubectl user access setup: orchestrator is not k3s"
+        return
+    fi
+
+    local kubeconfig_src="/etc/rancher/k3s/k3s.yaml"
+
+    if [[ "$DRY_RUN" == true ]]; then
+        print_info "[DRY-RUN] Would configure kubectl access for admin users"
+        return
+    fi
+
+    if [[ ! -f "$kubeconfig_src" ]]; then
+        print_warning "k3s kubeconfig not found at $kubeconfig_src - skipping kubectl user access setup"
+        return
+    fi
+
+    local users=()
+    if [[ -n "$ADMIN_USERNAME" ]] && id "$ADMIN_USERNAME" &>/dev/null; then
+        users+=("$ADMIN_USERNAME")
+    fi
+    if [[ -n "$RECOVERY_ADMIN_USERNAME" ]] && id "$RECOVERY_ADMIN_USERNAME" &>/dev/null; then
+        users+=("$RECOVERY_ADMIN_USERNAME")
+    fi
+
+    if [[ ${#users[@]} -eq 0 ]]; then
+        print_warning "No admin users found for kubectl access setup"
+        return
+    fi
+
+    local user
+    for user in "${users[@]}"; do
+        local user_home
+        user_home=$(getent passwd "$user" | cut -d: -f6)
+        local kube_dir="$user_home/.kube"
+        local kubeconfig_dst="$kube_dir/config"
+        local bashrc_file="$user_home/.bashrc"
+
+        mkdir -p "$kube_dir"
+        cp "$kubeconfig_src" "$kubeconfig_dst"
+        chown -R "$user:$user" "$kube_dir"
+        chmod 700 "$kube_dir"
+        chmod 600 "$kubeconfig_dst"
+
+        if ! grep -q "^alias kubectl='k3s kubectl'" "$bashrc_file" 2>/dev/null; then
+            echo "alias kubectl='k3s kubectl'" >> "$bashrc_file"
+        fi
+
+        if ! grep -q "^export KUBECONFIG=\$HOME/.kube/config" "$bashrc_file" 2>/dev/null; then
+            echo "export KUBECONFIG=\$HOME/.kube/config" >> "$bashrc_file"
+        fi
+
+        print_success "Configured kubectl access for user: $user"
+    done
+
+    print_info "Users can run kubectl without sudo after re-login (or new shell)"
+    log "kubectl access configured for users: ${users[*]}"
+}
+
 harden_ssh() {
     print_header "SSH HARDENING"
     
@@ -1576,16 +1642,14 @@ install_k3s() {
     
     # Install k3s with enhanced security settings
     # --https-listen-port: Custom API server port
-    # --disable=traefik: Remove default ingress controller (we use Nginx)
-    # --write-kubeconfig-mode: Restrict kubeconfig permissions
+    # --write-kubeconfig-mode: Set kubeconfig permissions to 640 for k3s group access
     # --tls-san: Add additional TLS subject alternative names
     # --kube-apiserver-arg: Additional API server security arguments
     # --kubelet-arg: Additional kubelet security arguments
     # Note: PodSecurityPolicy removed in k8s 1.25+, using Pod Security Admission instead
     curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server \
         --https-listen-port=$k3s_port \
-        --disable=traefik \
-        --write-kubeconfig-mode=600 \
+        --write-kubeconfig-mode=640 \
         --tls-san=$(hostname -I | awk '{print $1}') \
         --kube-apiserver-arg=--enable-admission-plugins=NodeRestriction \
         --kube-apiserver-arg=--audit-log-path=/var/log/k3s-audit.log \
@@ -1607,7 +1671,28 @@ install_k3s() {
     else
         print_warning "k3s installed but not fully ready yet"
     fi
+
+    # Configure k3s group access for admin users
+    print_step "Setting up k3s group access for admin users..."
+    if ! getent group k3s &>/dev/null; then
+        groupadd k3s
+        print_success "Created k3s group"
+    fi
+    if [[ -n "$ADMIN_USERNAME" ]] && id "$ADMIN_USERNAME" &>/dev/null; then
+        usermod -aG k3s "$ADMIN_USERNAME"
+        print_success "Added $ADMIN_USERNAME to k3s group"
+    fi
+    if [[ -n "$RECOVERY_ADMIN_USERNAME" ]] && id "$RECOVERY_ADMIN_USERNAME" &>/dev/null; then
+        usermod -aG k3s "$RECOVERY_ADMIN_USERNAME"
+        print_success "Added $RECOVERY_ADMIN_USERNAME to k3s group"
+    fi
     
+    # Set kubeconfig ownership and permissions for group access
+    print_step "Setting kubeconfig permissions for k3s group access..."
+    chown root:k3s /etc/rancher/k3s/k3s.yaml
+    chmod 640 /etc/rancher/k3s/k3s.yaml
+    echo "write-kubeconfig-mode: \"0640\"" | tee /etc/rancher/k3s/config.yaml
+
     # Apply additional security configurations
     print_step "Applying additional k3s security configurations..."
     
@@ -1656,6 +1741,21 @@ spec:
     ports:
     - protocol: UDP
       port: 53
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-traefik
+  namespace: default
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
 EOF
     
     # Apply Pod Security Standards using Pod Security Admission (replaces deprecated PodSecurityPolicy)
@@ -2692,6 +2792,11 @@ configure_ufw() {
     print_step "Allowing k3s API on port $k3s_port..."
     ufw allow "$k3s_port/tcp" comment "k3s API"
     
+    # Allow HTTP and HTTPS for Traefik Ingress
+    print_step "Allowing HTTP and HTTPS for Ingress..."
+    ufw allow 80/tcp comment "HTTP Ingress"
+    ufw allow 443/tcp comment "HTTPS Ingress"
+    
     # Allow k3s internal communication (flannel)
     print_step "Allowing k3s internal networking..."
     ufw allow 8472/udp comment "k3s Flannel VXLAN"
@@ -2922,8 +3027,9 @@ generate_report() {
         
         if [[ "${ORCHESTRATOR_CHOICE:-k3s}" == "k3s" ]]; then
             echo "Kubernetes (k3s):"
-            echo "  kubectl --server=https://$server_ip:${PORT_MAP[k3s_api]:-6443} get nodes"
-            echo "  KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get nodes"
+            echo "  kubectl get nodes"
+            echo "  kubectl get svc -n kube-system traefik"
+            echo "  Fallback: k3s kubectl get nodes"
         elif [[ "${ORCHESTRATOR_CHOICE}" == "swarm" ]]; then
             echo "Docker Swarm:"
             echo "  docker node ls"
@@ -2940,7 +3046,14 @@ generate_report() {
         printf "%-25s %s\n" "Service" "Status"
         printf "%-25s %s\n" "-------------------------" "------------"
         
-        for service in sshd nginx docker k3s sshguard fail2ban ufw unattended-upgrades; do
+        local services=(sshd sshguard fail2ban ufw unattended-upgrades)
+        if [[ "${ORCHESTRATOR_CHOICE:-k3s}" == "k3s" ]]; then
+            services+=(k3s)
+        else
+            services+=(docker nginx)
+        fi
+
+        for service in "${services[@]}"; do
             local status
             if [[ "$service" == "sshd" ]]; then
                 # Special handling for SSH service (try both names)
@@ -2962,19 +3075,21 @@ generate_report() {
         done
         echo ""
         
-        # Check Certbot/SSL status
-        echo "Certbot SSL:"
-        if command_exists certbot; then
-            if [[ -d "/etc/letsencrypt/live/$CERTBOT_DOMAIN" ]]; then
-                echo "  ✓ Configured for: $CERTBOT_DOMAIN"
-                echo "  Certificate expiry: $(openssl x509 -enddate -noout -in /etc/letsencrypt/live/$CERTBOT_DOMAIN/cert.pem 2>/dev/null | cut -d= -f2 || echo 'Unknown')"
+        # Check Certbot/SSL status (Swarm mode only)
+        if [[ "${ORCHESTRATOR_CHOICE:-k3s}" == "swarm" ]]; then
+            echo "Certbot SSL:"
+            if command_exists certbot; then
+                if [[ -n "$CERTBOT_DOMAIN" && -d "/etc/letsencrypt/live/$CERTBOT_DOMAIN" ]]; then
+                    echo "  ✓ Configured for: $CERTBOT_DOMAIN"
+                    echo "  Certificate expiry: $(openssl x509 -enddate -noout -in /etc/letsencrypt/live/$CERTBOT_DOMAIN/cert.pem 2>/dev/null | cut -d= -f2 || echo 'Unknown')"
+                else
+                    echo "  ○ Installed (no certificates)"
+                fi
             else
-                echo "  ○ Installed (no certificates)"
+                echo "  ✗ Not installed"
             fi
-        else
-            echo "  ✗ Not installed"
+            echo ""
         fi
-        echo ""
         
         echo "==============================================================================="
         echo "                         FIREWALL RULES (UFW)"
@@ -3087,7 +3202,7 @@ generate_report() {
         echo ""
         echo "1. TEST SSH CONNECTION:"
         echo "   - Open a NEW terminal window"
-        echo "   - Connect using: ssh -p ${PORT_MAP[ssh]:-22} root@$server_ip"
+        echo "   - Connect using: ssh -p ${PORT_MAP[ssh]:-22} ${ADMIN_USERNAME:-admin}@$server_ip"
         echo "   - If it fails, you may be locked out! Check the report for details."
         echo ""
         echo "2. SAVE THIS REPORT SECURELY:"
@@ -3101,9 +3216,9 @@ generate_report() {
         echo "   - Test with failed SSH attempts (from another machine)"
         echo ""
         echo "4. TEST KUBERNETES (K3S):"
-        echo "   - Run: k3s kubectl get nodes"
+        echo "   - Run: kubectl get nodes"
         echo "   - Should show your server as 'Ready'"
-        echo "   - Test deployment: k3s kubectl run test --image=nginx --port=80"
+        echo "   - Verify Traefik: kubectl get svc -n kube-system traefik"
         echo ""
         echo "ONGOING MAINTENANCE TASKS:"
         echo ""
@@ -3121,7 +3236,7 @@ generate_report() {
         echo ""
         echo "8. UPDATE SERVICES:"
         echo "   - Docker: docker system prune -a (clean unused images)"
-        echo "   - k3s: k3s kubectl get nodes (check cluster health)"
+        echo "   - k3s: kubectl get nodes (check cluster health)"
         echo "   - Fail2Ban: sudo fail2ban-client reload (reload configuration)"
         echo "   - Unattended upgrades: Check /var/log/unattended-upgrades/"
         echo "   - System: apt update && apt upgrade (manual updates)"
@@ -3137,7 +3252,9 @@ generate_report() {
         echo "    - Check Fail2Ban status: sudo fail2ban-client status"
         echo "    - Check for failed SSH attempts: sudo journalctl -u ssh"
         echo "    - Verify SSH key fingerprints match known hosts"
-        echo "    - Check SSL certificate expiry: sudo certbot certificates"
+        if [[ "${ORCHESTRATOR_CHOICE:-k3s}" == "swarm" ]]; then
+            echo "    - Check SSL certificate expiry: sudo certbot certificates"
+        fi
         echo ""
         
         echo "==============================================================================="
@@ -3159,7 +3276,7 @@ generate_report() {
         echo "2. SSH Access:"
         echo "   - Port has been changed to ${PORT_MAP[ssh]:-22}"
         echo "   - Password authentication is DISABLED"
-        echo "   - Use SSH keys only: ssh -p ${PORT_MAP[ssh]:-22} root@$server_ip"
+        echo "   - Use SSH keys only: ssh -p ${PORT_MAP[ssh]:-22} ${ADMIN_USERNAME:-admin}@$server_ip"
         echo ""
         echo "3. Fail2Ban:"
         echo "   - Intrusion prevention system is active"
@@ -3167,8 +3284,8 @@ generate_report() {
         echo "   - Configuration: /etc/fail2ban/jail.local"
         echo ""
         echo "4. Kubernetes (k3s):"
-        echo "   - kubeconfig: /etc/rancher/k3s/k3s.yaml"
-        echo "   - Use 'k3s kubectl' or set KUBECONFIG environment variable"
+        echo "   - kubeconfig is installed per user at: ~/.kube/config"
+        echo "   - Use kubectl directly (no sudo required)"
         echo ""
         echo "5. Firewall:"
         echo "   - UFW is enabled with minimal open ports"
@@ -3264,7 +3381,7 @@ main() {
     echo "    ╔══════════════════════════════════════════════════════════════════════════╗"
     echo "    ║           Ubuntu Server Setup Script v${SCRIPT_VERSION}                  ║"
     echo "    ║                                                                          ║"
-    echo "    ║  Docker • k3s/Swarm • SSHGuard • Fail2Ban • Certbot • UFW • SSH          ║"
+    echo "    ║  Docker • k3s/Swarm • Traefik • SSHGuard • Fail2Ban • UFW • SSH           ║"
     echo "    ║  Hardening • Unattended Upgrades • htop                                  ║"
     echo "    ╚══════════════════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
@@ -3382,8 +3499,8 @@ main() {
         "k3s")
             print_info "Installing k3s (Kubernetes) with containerd runtime..."
             install_k3s
-            # Install MetalLB for bare-metal load balancing (optional)
-            install_metallb
+            # Skip MetalLB on public VPS with single IPs to allow Klipper-lb to bind Traefik to host IP natively
+            # install_metallb
             ;;
         "swarm")
             print_info "Installing Docker CE + Docker Swarm..."
@@ -3399,16 +3516,23 @@ main() {
     install_sshguard
     install_fail2ban
     
-    # Install Nginx for container routing and Certbot SSL validation
-    install_nginx
-    
-    # Setup SSL certificates if configured
-    setup_certbot
+    if [[ "$ORCHESTRATOR_CHOICE" == "swarm" ]]; then
+        # Install Nginx for container routing and Certbot SSL validation
+        install_nginx
+        
+        # Setup SSL certificates if configured
+        setup_certbot
+    else
+        print_info "Skipping host Nginx and Certbot for k3s - Traefik will handle Ingress natively."
+    fi
     
     # Setup admin users (MUST be done before SSH hardening)
     # Admin user is required since we disable root SSH login
     setup_admin_user
     setup_recovery_admin
+
+    # Configure kubectl access for admin users (k3s only)
+    configure_kubectl_access
     
     # Configure firewall (must allow SSH port before hardening)
     configure_ufw
@@ -3476,9 +3600,9 @@ main() {
     echo ""
     if [[ "$ORCHESTRATOR_CHOICE" == "k3s" ]]; then
         print_info "4. TEST KUBERNETES (K3S):"
-        print_info "   - Run: sudo k3s kubectl get nodes"
+        print_info "   - Run: kubectl get nodes"
         print_info "   - Should show your server as 'Ready'"
-        print_info "   - Test deployment: sudo k3s kubectl run test --image=nginx --port=80"
+        print_info "   - Verify Traefik: kubectl get svc -n kube-system traefik"
     else
         print_info "4. TEST DOCKER SWARM:"
         print_info "   - Run: docker node ls"
@@ -3514,7 +3638,7 @@ main() {
     print_info "8. UPDATE SERVICES:"
     print_info "   - Docker: docker system prune -a (clean unused images)"
     if [[ "$ORCHESTRATOR_CHOICE" == "k3s" ]]; then
-        print_info "   - k3s: sudo k3s kubectl get nodes (check cluster health)"
+        print_info "   - k3s: kubectl get nodes (check cluster health)"
     else
         print_info "   - Swarm: docker node ls (check cluster health)"
     fi
@@ -3533,7 +3657,9 @@ main() {
     print_info "    - Check Fail2Ban status: sudo fail2ban-client status"
     print_info "    - Check for failed SSH attempts: sudo journalctl -u ssh"
     print_info "    - Verify SSH key fingerprints match known hosts"
-    print_info "    - Check SSL certificate expiry: sudo certbot certificates"
+    if [[ "$ORCHESTRATOR_CHOICE" == "swarm" ]]; then
+        print_info "    - Check SSL certificate expiry: sudo certbot certificates"
+    fi
     echo ""
     
     if [[ "$DRY_RUN" != true ]]; then
