@@ -1,7 +1,7 @@
-# Node.js Setup Script
+# Node.js Setup and Upgrade Scripts
 
-This script installs Node.js from the official binaries on Linux systems.
-It supports installing specific versions or the latest in a major version series, automatically detects the system architecture, and handles version conflicts.
+These scripts install or upgrade Node.js from the official binaries on Linux systems.
+They support installing specific versions or the latest in a major version series, automatically detect the system architecture, and handle version conflicts.
 
 ## Features
 
@@ -11,6 +11,16 @@ It supports installing specific versions or the latest in a major version series
 - **Symlinks**: Creates symbolic links for `node`, `npm`, `npx`, and `nodejs` commands in `/usr/local/bin`.
 - **Verification**: Tests all installed binaries after installation.
 - **Logging**: Logs all operations to `/var/log/node_install.log`.
+
+## Upgrade Script
+
+The upgrade script uses the same version selection rules as the installer, but it removes any existing `node-*` directories from `/opt` before installing the requested version.
+
+```bash
+sudo ./upgrade_nodeJs.sh [version]
+```
+
+The upgrade log is written to `/var/log/node_upgrade.log`.
 
 ## Usage
 

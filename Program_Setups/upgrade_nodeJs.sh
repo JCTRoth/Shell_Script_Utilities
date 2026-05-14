@@ -1,14 +1,14 @@
 #!/bin/bash
 
-# Usage: ./setup_nodeJs.sh [version]
+# Usage: sudo ./upgrade_nodeJs.sh [version]
 # If version is not provided, installs the latest LTS version of Node.js.
 # If a different version is already installed in /opt, it will be removed and replaced.
 
 # Log file location
-LOG_FILE="/var/log/node_install.log"
+LOG_FILE="/var/log/node_upgrade.log"
 
 # Create or clear the log file
-echo "Node.js Installation Log - $(date)" > $LOG_FILE
+echo "Node.js Upgrade Log - $(date)" > $LOG_FILE
 echo "-----------------------------------" >> $LOG_FILE
 
 set -o pipefail
@@ -21,7 +21,7 @@ elif command -v dnf >/dev/null 2>&1; then
 elif command -v yum >/dev/null 2>&1; then
   yum remove -y nodejs npm
 else
-  echo "Warning: No supported package manager found for removing system Node.js packages."
+  echo "Warning: No supported package manager found for removing system Node.js packages." | tee -a $LOG_FILE
 fi
 
 # Parse command-line arguments for version
@@ -75,22 +75,22 @@ NODE_TAR="${NODE_DISTRO}.tar.xz"
 NODE_URL="https://nodejs.org/dist/${NODE_VERSION}/${NODE_TAR}"
 echo "Detected architecture: $ARCH -> using $NODE_ARCH" | tee -a $LOG_FILE
 
-# Check for existing Node.js installation in /opt
-EXISTING_NODE_DIR=$(ls /opt 2>/dev/null | grep '^node-' | head -n1)
-if [ -n "$EXISTING_NODE_DIR" ]; then
-  EXISTING_VERSION=$(echo "$EXISTING_NODE_DIR" | sed -E 's/node-(v[0-9]+\.[0-9]+\.[0-9]+)-.*/\1/')
-  if [ "$EXISTING_VERSION" != "$NODE_VERSION" ]; then
-    echo "Removing old Node.js version $EXISTING_VERSION from /opt..." | tee -a $LOG_FILE
-    sudo rm -rf "/opt/$EXISTING_NODE_DIR"
-  fi
+# Remove any existing Node.js installations in /opt before upgrading
+if compgen -G "$INSTALL_DIR"/node-* > /dev/null; then
+  echo "Removing existing Node.js installations from $INSTALL_DIR..." | tee -a $LOG_FILE
+  for node_dir in "$INSTALL_DIR"/node-*; do
+    if [ -d "$node_dir" ]; then
+      echo "Removing $node_dir..." | tee -a $LOG_FILE
+      sudo rm -rf "$node_dir"
+    fi
+  done
 fi
 
-# Step 1: Download the Node.js tarball
-echo "Downloading Node.js LTS version ${NODE_VERSION}..." | tee -a $LOG_FILE
+# Step 1: Download and extract the Node.js tarball
+echo "Downloading Node.js version ${NODE_VERSION}..." | tee -a $LOG_FILE
 echo "Extracting Node.js to $INSTALL_DIR..." | tee -a $LOG_FILE
-curl -fsSL "$NODE_URL" | tar -xJf - -C "$INSTALL_DIR"
-if [ $? -ne 0 ]; then
-  echo "Error: Failed to download Node.js." | tee -a $LOG_FILE
+if ! curl -fsSL "$NODE_URL" | tar -xJf - -C "$INSTALL_DIR"; then
+  echo "Error: Failed to download or extract Node.js." | tee -a $LOG_FILE
   exit 1
 fi
 
@@ -110,11 +110,15 @@ fi
 echo "Testing Node.js, npm, npx, and nodejs..." | tee -a $LOG_FILE
 
 NODE_VERSION_TEST=$(node -v)
+NODE_STATUS=$?
 NPM_VERSION_TEST=$(npm -v)
+NPM_STATUS=$?
 NPX_VERSION_TEST=$(npx -v)
+NPX_STATUS=$?
 NODEJS_VERSION_TEST=$(nodejs -v)
+NODEJS_STATUS=$?
 
-if [ $? -eq 0 ]; then
+if [ $NODE_STATUS -eq 0 ] && [ $NPM_STATUS -eq 0 ] && [ $NPX_STATUS -eq 0 ] && [ $NODEJS_STATUS -eq 0 ]; then
   echo "Node.js version: $NODE_VERSION_TEST" | tee -a $LOG_FILE
   echo "npm version: $NPM_VERSION_TEST" | tee -a $LOG_FILE
   echo "npx version: $NPX_VERSION_TEST" | tee -a $LOG_FILE
@@ -124,5 +128,4 @@ else
   exit 1
 fi
 
-echo "Node.js installation completed successfully." | tee -a $LOG_FILE
-
+echo "Node.js upgrade completed successfully." | tee -a $LOG_FILE
