@@ -37,6 +37,7 @@ A collection of shell scripts for system administration, backups, container mana
     ** Supports installing specific versions (e.g., v18.17.0) or latest in a major series (e.g., 20 for latest 20.x).
     ** Automatically detects system architecture and removes conflicting versions.
     ** Creates symlinks for node, npm, npx, and nodejs commands.
+  * setup_git_credentials.sh - Interactively set Git name/email and manage SSH keys.
   * Pine64_GPIO_Setup/ - GPIO libraries for Pine64 hardware.
 
 === rulesD_Problems/ - Udev rules for hardware issues.
