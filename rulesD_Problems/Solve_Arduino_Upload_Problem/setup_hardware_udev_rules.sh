@@ -1,24 +1,26 @@
 #!/bin/bash
 
-# https://github.com/arduino/help-center-content/issues/155
-sudo apt remove brltty
+# Fedora: dnf statt apt
+if rpm -q brltty &>/dev/null; then
+    echo "Removing brltty..."
+    sudo dnf remove -y brltty
+else
+    echo "brltty not installed, skipping..."
+fi
 
-# Download the udev rules file
-wget -q https://raw.githubusercontent.com/platformio/platformio-core/develop/platformio/assets/system/99-platformio-udev.rules || { echo "Failed to download udev rules file."; exit 1; }
+# Download udev rules
+wget -q https://raw.githubusercontent.com/platformio/platformio-core/develop/platformio/assets/system/99-platformio-udev.rules || { echo "Failed to download."; exit 1; }
 
-# Copy to the destination with correct permissions
-sudo install -m 755 99-platformio-udev.rules /etc/udev/rules.d/ || { echo "Failed to copy udev rules file."; exit 1; }
+# Install with correct permissions (644 statt 755, udev rules müssen nicht ausführbar sein)
+sudo install -m 644 99-platformio-udev.rules /etc/udev/rules.d/ || { echo "Failed to copy."; exit 1; }
 
-# Delete the downloaded file
-rm 99-platformio-udev.rules || { echo "Failed to delete temporary udev rules file."; exit 1; }
+rm 99-platformio-udev.rules
 
-# Reload udev rules
-sudo udevadm control --reload-rules || { echo "Failed to reload udev rules."; exit 1; }
+# Reload rules
+sudo udevadm control --reload-rules
+sudo udevadm trigger
 
-# Restart the udev service (optional, for full effect)
-sudo systemctl restart udev || { echo "Failed to restart udev service."; exit 1; }
+# Fedora: systemd-udevd statt udev
+sudo systemctl restart systemd-udevd || { echo "Failed to restart udev service."; exit 1; }
 
-# End of script
-echo "All done - now connect the device to the computer."
-
-
+echo "All done - now connect the device."
