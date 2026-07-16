@@ -205,7 +205,3 @@ Interactive script to configure Git credentials (username and email) via interac
 * Prompts for Git username (required).
 * Prompts for Git email address (required).
 * Configures the values globally with `git config --global`.
-
-== License
-
-These scripts are part of the https://github.com/jonas/Shell_Script_Utilities[Shell Script Utilities] collection. See the main README for more information.
