@@ -1,0 +1,211 @@
+= Program Setup Scripts
+Jonas
+:toc: left
+:toclevels: 2
+:sectnums:
+:sectnumlevels: 3
+:sectanchors:
+:icons: font
+:source-highlighter: highlight.js
+:description: Collection of setup and installation scripts for various development tools and services on Linux systems.
+
+Collection of setup and installation scripts for various development tools and services on Linux systems (Fedora, Ubuntu/Debian, and derivatives).
+
+== OCRmyPDF + Tesseract (`setup_ocr.sh`)
+
+Installs https://ocrmypdf.readthedocs.io/[OCRmyPDF] and https://github.com/tesseract-ocr/tesseract[Tesseract OCR] to add a text layer to scanned PDF documents, making them searchable and copyable.
+
+=== Features
+
+* *Distribution Detection*:: Automatically detects Fedora or Ubuntu/Debian and uses the correct package manager (`dnf` / `apt`).
+* *Interactive Wizard*:: Three-step guided setup with language-pack selection.
+* *State Tracking*:: On re-runs, skips the base installation and jumps straight to language-pack selection.
+* *30 Language Packs*:: Supports English, German, French, Spanish, Russian, Chinese, Japanese, and many more.
+
+=== Usage
+
+[source,bash]
+----
+sudo ./setup_ocr.sh
+# Force re-run of the full wizard (including base install):
+sudo ./setup_ocr.sh --full
+----
+
+=== What It Does
+
+. **Detect System** – Identifies the distribution and selects the appropriate package backend.
+. **Install Base Packages** – Installs `ocrmypdf` and `tesseract` (and `tesseract-ocr` on Ubuntu).
+. **Language Selection** – Presents an interactive menu of 30 language packs — select by number or ISO code.
+. **Usage Examples** – Prints example commands after successful installation.
+
+=== Troubleshooting
+
+* `ocrmypdf` not found after installation:: Re-run with `sudo ./setup_ocr.sh --full`.
+* Ubuntu — universe repository required:: Enable it with `sudo add-apt-repository universe`.
+* OCR quality is poor:: Install additional language packs or use `--clean` / `--deskew` options.
+
+== Node.js (`setup_nodeJs.sh` / `upgrade_nodeJs.sh`)
+
+Install or upgrade Node.js from the official binaries on Linux systems.
+Supports installing specific versions or the latest in a major version series, automatically detects the system architecture, and handles version conflicts.
+
+=== After installation, examples for the OCR
+
+[source,bash]
+----
+# Make a scanned PDF searchable (German text)
+ocrmypdf -l deu input.pdf output.pdf
+
+# Two languages at once (German + English)
+ocrmypdf -l deu+eng input.pdf output.pdf
+
+# Additional options
+ocrmypdf --deskew --clean -l deu input.pdf output.pdf
+----
+
+=== Features
+
+* *Version Selection*:: Install a specific Node.js version (e.g., `v18.17.0`) or the latest in a major series (e.g., `20` for the newest 20.x version).
+* *Architecture Detection*:: Automatically detects x86_64, ARM64, ARMv7, etc., and downloads the appropriate binary.
+* *Conflict Resolution*:: Removes existing Node.js installations if they differ from the requested version.
+* *Symlinks*:: Creates symbolic links for `node`, `npm`, `npx`, and `nodejs` commands in `/usr/local/bin`.
+* *Verification*:: Tests all installed binaries after installation.
+* *Logging*:: Logs all operations to `/var/log/node_install.log`.
+
+=== Setup Script
+
+[source,bash]
+----
+sudo ./setup_nodeJs.sh [version]
+----
+
+==== Arguments
+
+`version`::
+Optional. Can be:
++
+* A full version string (e.g., `v18.17.0`)
+* A major version number (e.g., `20`) to install the latest in that series
+* If omitted, installs the latest LTS version
+
+==== Examples
+
+[source,bash]
+----
+# Install the latest LTS version
+sudo ./setup_nodeJs.sh
+
+# Install the latest in Node.js 20.x series
+sudo ./setup_nodeJs.sh 20
+
+# Install a specific version
+sudo ./setup_nodeJs.sh v18.17.0
+----
+
+=== Upgrade Script
+
+The upgrade script uses the same version selection rules as the installer, but it removes any existing `node-*` directories from `/opt` before installing the requested version.
+
+[source,bash]
+----
+sudo ./upgrade_nodeJs.sh [version]
+----
+
+The upgrade log is written to `/var/log/node_upgrade.log`.
+
+=== What It Does
+
+. **Purge System Packages** – Removes any system-installed `nodejs` and `npm` packages to avoid conflicts.
+. **Version Resolution** – Determines the exact version to install based on input.
+. **Architecture Check** – Detects the system architecture and selects the correct binary.
+. **Download** – Fetches the Node.js tarball from `nodejs.org`.
+. **Extraction** – Extracts to `/opt/node-{version}-linux-{arch}/`.
+. **Cleanup** – Removes the downloaded tarball.
+. **Symlinks** – Creates symlinks in `/usr/local/bin` for easy access.
+. **Testing** – Verifies all commands work and logs versions.
+
+=== Installation Location
+
+*Binaries*:: `/opt/node-{version}-linux-{arch}/bin/`
+*Symlinks*:: `/usr/local/bin/` (points to the above)
+*Log File*:: `/var/log/node_install.log`
+
+=== Troubleshooting
+
+==== Permission Denied
+* Ensure you're running with `sudo`.
+* Check that `/var/log`, `/opt`, and `/usr/local/bin` are writable by root.
+
+==== Download Fails
+* Verify internet connection.
+* Check if the requested version exists on https://nodejs.org/dist/[nodejs.org/dist/].
+* For major versions, ensure there are releases in that series.
+
+==== Architecture Not Supported
+* The script supports x86_64, ARM64, and ARMv7.
+* Unknown architectures fall back to x64 with a warning.
+
+==== jq Not Found
+* Install `jq`: `sudo apt install jq` (on Debian/Ubuntu).
+
+==== Existing Installation Not Removed
+* The script only removes installations with different versions.
+* If the same version is requested, it overwrites the existing install.
+
+=== Uninstalling
+
+To remove Node.js installed by this script:
+
+[source,bash]
+----
+sudo rm -rf /opt/node-*
+sudo rm /usr/local/bin/node /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/nodejs
+----
+
+== LAMP Stack (`setup_LAMP.sh`)
+
+Installs a full LAMP stack (Linux, Apache, MySQL/MariaDB, PHP) on Debian/Ubuntu systems using the `tasksel` utility.
+
+[source,bash]
+----
+sudo ./setup_LAMP.sh
+----
+
+=== What It Does
+
+. Installs `tasksel` if not already present.
+. Runs `tasksel install lamp-server` to set up Apache, MySQL/MariaDB, and PHP.
+
+== Fish Shell (`setup_fish.sh`)
+
+Installs the https://fishshell.com/[Fish shell] and sets it as the default login shell.
+
+[source,bash]
+----
+sudo ./setup_fish.sh
+----
+
+=== What It Does
+
+. Installs `fish` via the system package manager.
+. Changes the user's default shell to Fish with `chsh -s /usr/bin/fish`.
+. The change takes effect after the next login or reboot.
+
+== Git Credentials (`setup_git_credentials.sh`)
+
+Interactive script to configure Git credentials (username and email) via interactive prompts.
+
+[source,bash]
+----
+./setup_git_credentials.sh
+----
+
+=== What It Does
+
+* Prompts for Git username (required).
+* Prompts for Git email address (required).
+* Configures the values globally with `git config --global`.
+
+== License
+
+These scripts are part of the https://github.com/jonas/Shell_Script_Utilities[Shell Script Utilities] collection. See the main README for more information.
