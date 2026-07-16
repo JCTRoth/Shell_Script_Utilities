@@ -1,7 +1,7 @@
 = Program Setup Scripts
 Jonas
 :toc: left
-:toclevels: 2
+:toclevels: 1
 :sectnums:
 :sectnumlevels: 3
 :sectanchors:
