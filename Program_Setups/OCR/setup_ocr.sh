@@ -89,7 +89,8 @@ Detected system : ${PRETTY_NAME:-${ID}}
 Package backend : $([[ ${DISTRO} == fedora ]] && echo dnf || echo apt)
 
 This wizard will:
-  1. install ocrmypdf and tesseract,
+  1. install ocrmypdf, tesseract, zenity (GUI), unpaper (for --clean)
+     and tesseract-osd (orientation & script detection, required by ocrmypdf),
   2. let you pick the OCR language packs,
   3. finish with a usage example.
 
@@ -105,12 +106,16 @@ EOF
 # Wizard step 2/3 — base installation
 # ---------------------------------------------------------------------------
 step_base_install() {
-    title "Step 2/3 — installing ocrmypdf and tesseract"
+    title "Step 2/3 — installing ocrmypdf, tesseract and GUI dependencies"
     local base_pkgs
     if [[ ${DISTRO} == fedora ]]; then
-        base_pkgs=(ocrmypdf tesseract)
+        # Added zenity (for GUI), unpaper (needed for --clean flag),
+        # and tesseract-osd (orientation & script detection, required by ocrmypdf)
+        base_pkgs=(ocrmypdf tesseract tesseract-osd zenity unpaper)
     else
-        base_pkgs=(ocrmypdf tesseract-ocr)
+        # Added zenity (for GUI), unpaper (needed for --clean flag),
+        # and tesseract-ocr-osd (orientation & script detection, required by ocrmypdf)
+        base_pkgs=(ocrmypdf tesseract-ocr tesseract-ocr-osd zenity unpaper)
         echo "Running apt-get update ..."
         apt-get update -qq
     fi
@@ -120,7 +125,20 @@ step_base_install() {
             echo "Hint: the 'universe' repository must be enabled:  add-apt-repository universe" >&2
         die "Base installation failed."
     fi
+    
+    # Verify core components
     command -v ocrmypdf >/dev/null 2>&1 || die "ocrmypdf not found after installation."
+    command -v zenity >/dev/null 2>&1 || die "zenity (GUI) not found after installation."
+    command -v tesseract >/dev/null 2>&1 || die "tesseract not found after installation."
+    
+    # Verify osd.traineddata (required by ocrmypdf for orientation & script detection)
+    TESSDATA=$(tesseract --print-parameters 2>/dev/null | grep -m1 'tessdata_dir' | awk '{print $2}')
+    TESSDATA="${TESSDATA:-/usr/share/tesseract/tessdata}"
+    if [[ ! -f "${TESSDATA}/osd.traineddata" ]]; then
+        echo "WARNING: osd.traineddata not found — OCR may fail on page orientation detection."
+        echo "Expected location: ${TESSDATA}/osd.traineddata"
+    fi
+    
     echo "OK — $(ocrmypdf --version 2>/dev/null | head -n1) installed."
 }
 
@@ -186,17 +204,16 @@ step_example() {
     cat <<'EOF'
 Make a scanned PDF searchable (German text):
 
-  ocrmypdf -l deu "/home/jonas/Dokumente/Jonas/Mietvertrag_Bensheim_Dammstrasse_78.pdf" \
-                  "/home/jonas/Dokumente/Jonas/Mietvertrag_Bensheim_Dammstrasse_78_OCR.pdf"
+  ocrmypdf -l deu "/home/jonas/Dokumente/test1.pdf" \
+                  "/home/jonas/Dokumente/Jonas/test1_ocr.pdf"
 
-Two languages at once (German + English):
-
-  ocrmypdf -l deu+eng input.pdf output.pdf
+  Or even better use the script ocr_gui.sh for a graphical interface.
 
 Handy options:
   --deskew            straighten crooked scans
-  --clean             remove scan noise before OCR
+  --clean             remove scan noise before OCR (requires unpaper)
   --sidecar text.txt  additionally export the recognized text
+  --skip-text         skip pages that already have a text layer (faster)
   --force-ocr         OCR even pages that already contain a text layer
 
 List all installed OCR languages:
@@ -206,25 +223,74 @@ EOF
 }
 
 # ---------------------------------------------------------------------------
-# Main flow: full wizard on first run, language selection on later runs
+# Health check — verify all components the OCR script needs
+# Returns 0 if everything is present, 1 otherwise
+# ---------------------------------------------------------------------------
+health_check() {
+    local missing=()
+
+    # Check every command that ocr_gui.sh needs at runtime
+    for cmd in ocrmypdf tesseract zenity; do
+        command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
+    done
+
+    # unpaper is needed for the --clean flag which ocr_gui.sh uses
+    command -v unpaper >/dev/null 2>&1 || missing+=("unpaper")
+
+    # osd.traineddata is required by ocrmypdf for orientation & script detection
+    if command -v tesseract >/dev/null 2>&1; then
+        TESSDATA=$(tesseract --print-parameters 2>/dev/null | grep -m1 'tessdata_dir' | awk '{print $2}')
+        TESSDATA="${TESSDATA:-/usr/share/tesseract/tessdata}"
+        if [[ ! -f "${TESSDATA}/osd.traineddata" ]]; then
+            missing+=("osd.traineddata")
+        fi
+    else
+        # Can't even check — tesseract itself is missing, counted above
+        :
+    fi
+
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        echo "Missing components: ${missing[*]}"
+        return 1
+    fi
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+# Main flow: full wizard on first run, repair or language selection on later
+# runs
 # ---------------------------------------------------------------------------
 main() {
     local force_full=0
     [[ "${1:-}" == "--full" ]] && force_full=1
 
-    if (( force_full == 0 )) && [[ -f ${STATE_FILE} ]] && command -v ocrmypdf >/dev/null 2>&1; then
-        title "OCRmyPDF installation wizard"
-        echo "Existing installation detected (state file: ${STATE_FILE})."
-        echo "Skipping the base installation — going straight to the language packs."
-        echo "(Run with --full to repeat the complete wizard.)"
-        step_languages
+    if (( force_full == 0 )) && [[ -f ${STATE_FILE} ]]; then
+        # State file exists — check if anything was manually removed
+        if health_check; then
+            title "OCRmyPDF installation wizard"
+            echo "Existing installation detected (state file: ${STATE_FILE})."
+            echo "All components are present. Skipping base installation."
+            echo "(Run with --full to repeat the complete wizard.)"
+            step_languages
+            step_example
+            return 0
+        else
+            title "OCRmyPDF installation wizard"
+            echo "Existing installation detected but some components are missing."
+            echo "Re-running base installation to repair …"
+            echo "(Run with --full to force a complete reinstall.)"
+            echo
+            step_base_install
+            # State file already exists, no need to recreate
+        fi
     else
         step_welcome
         step_base_install
         mkdir -p "${STATE_DIR}"
         touch "${STATE_FILE}"
-        step_languages
     fi
+
+    step_languages
     step_example
 }
 
