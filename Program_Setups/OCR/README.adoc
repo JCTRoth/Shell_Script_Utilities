@@ -1,0 +1,146 @@
+= OCRmyPDF + Tesseract — Installation & GUI Wrapper
+Jonas
+:toc: left
+:toclevels: 2
+:sectnums:
+:sectnumlevels: 3
+:sectanchors:
+:icons: font
+:source-highlighter: highlight.js
+:description: Two scripts that together provide a complete OCR workflow: a setup wizard and a graphical convenience wrapper for OCRmyPDF.
+
+This folder contains two complementary scripts:
+
+* `setup_ocr.sh` – Installation wizard for OCRmyPDF, Tesseract OCR and language packs.
+* `ocr_gui.sh`  – Graphical (Zenity) frontend to OCR scanned PDFs with full navigation, settings, and batch processing.
+
+They are designed to work as a single unit: run the setup wizard once, then use the GUI for daily OCR work.
+
+== Setup Wizard (`setup_ocr.sh`)
+
+Installs https://ocrmypdf.readthedocs.io/[OCRmyPDF] and https://github.com/tesseract-ocr/tesseract[Tesseract OCR] on Fedora or Ubuntu/Debian.
+
+=== Features
+
+* *Distribution Detection*:: Automatically detects Fedora or Ubuntu/Debian and uses the correct package manager (`dnf` / `apt`).
+* *Interactive Wizard*:: Three-step guided setup: base install, language-pack selection, usage examples.
+* *State Tracking*:: On re-runs, skips the base installation and jumps straight to language-pack selection.
+* *Health Check*:: Detects missing components (e.g., after manual uninstall) and repairs them automatically.
+* *30 Language Packs*:: Supports English, German, French, Spanish, Russian, Chinese, Japanese, and many more.
+* *`--full` Flag*:: Force re-run the complete wizard including base installation.
+
+=== Usage
+
+[source,bash]
+----
+sudo ./setup_ocr.sh
+sudo ./setup_ocr.sh --full    # force full reinstall
+----
+
+=== What It Installs
+
+[cols="2,1,2"]
+|===
+| Package | Fedora | Ubuntu
+| `ocrmypdf` | `ocrmypdf` | `ocrmypdf`
+| Tesseract | `tesseract` | `tesseract-ocr`
+| Language packs | `tesseract-langpack-*` | `tesseract-ocr-*`
+| Orientation & Script Detection | `tesseract-osd` | `tesseract-ocr-osd`
+| GUI dialogs | `zenity` | `zenity`
+| Scan cleanup | `unpaper` | `unpaper`
+|===
+
+=== Troubleshooting
+
+* Missing `osd.traineddata` → run `sudo ./setup_ocr.sh` (health check will repair)
+* Ubuntu — universe repository required → `sudo add-apt-repository universe`
+* OCR quality is poor → install additional language packs or adjust GUI settings
+
+== Graphical OCR Frontend (`ocr_gui.sh`)
+
+A https://gitlab.gnome.org/GNOME/zenity[Zenity]-based GUI wrapper around `ocrmypdf` that provides a complete step-by-step workflow.
+
+=== Workflow
+
+[source]
+----
+Mode selection → File/Folder picker → Language selection
+→ Text mode → Naming mode → OCR processing → Result dialog
+----
+
+Every step has a **Back** button; cancel on the main screen exits.
+
+=== Features
+
+* *Single File & Batch Mode*:: Process one PDF or a whole folder at once.
+* *Language Selection*:: Dynamically reads installed Tesseract languages (dynamically detected at startup).
+* *Text Mode*:: `--skip-text` (faster) or `--force-ocr` (rebuild text layer) with optional "Remember" setting.
+* *Output Naming*:: Three options — replace original, add `_OCR` suffix, or auto-indexed numbers (`_1`, `_2`, …).
+* *Remembered Settings*:: Text mode and naming choices can be saved to `ocr_settings.json` (lives next to the script, manageable via Settings window).
+* *Batch Processing*:: Processes all unprocessed PDFs in a folder with a progress bar.
+* *Error Logging*:: Timestamped debug output visible directly in the terminal.
+* *Navigation*:: "OCR another file" restarts the workflow at the file picker.
+
+=== Usage
+
+[source,bash]
+----
+cd Program_Setups/OCR
+./ocr_gui.sh
+----
+
+Optional: enable full bash trace for debugging:
+
+[source,bash]
+----
+OCR_DEBUG=1 ./ocr_gui.sh
+----
+
+=== Dependencies
+
+Installed by `setup_ocr.sh`:
+
+* `zenity` – GUI dialogs
+* `ocrmypdf` – OCR engine
+* `tesseract` – OCR backend
+* `tesseract-osd` – Orientation & Script Detection
+* `unpaper` – Scan image cleanup (for `--clean` flag)
+* `python3` – JSON settings management
+* `bash` ≥ 4.0 – associative arrays and `mapfile`
+
+=== Settings Window
+
+Accessed from the main menu. Shows all configurable options:
+
+* *Text handling mode* – `--skip-text` or `--force-ocr` (checkbox, rememberable)
+* *Naming: Replace original file* – overwrites the source PDF
+* *Naming: _OCR suffix* – appends `_OCR` to the filename (default)
+* *Naming: Index number* – creates `filename_1.pdf`, `filename_2.pdf`, …
+
+Naming modes are mutually exclusive: only the last checked one is kept on Save.
+
+=== Example Session
+
+[source]
+----
+$ ./ocr_gui.sh
+[10:15:00] DIALOG: mode selection
+→ Pick "Process single PDF file"
+→ Select a PDF
+→ Pick language "deu"
+→ Text mode: --skip-text
+→ Naming: _OCR suffix
+→ OCR runs… success!
+→ "OCR another file?" → back to file picker
+----
+
+== Files
+
+[cols="3,1"]
+|===
+| File | Purpose
+| `setup_ocr.sh` | Installation wizard (must be run as root)
+| `ocr_gui.sh`  | Graphical OCR frontend
+| `ocr_settings.json` | Remembered settings (auto-created)
+| `README.adoc` | This file
+|===
