@@ -34,23 +34,18 @@ log_msg() {
 }
 
 # Helper: run a command and log its output
+# Streams output live to the terminal while also writing to the log file.
+# Uses --stats-one-line to force rclone to print progress even when not a TTY.
 run_and_log() {
     local label="$1"
     shift
     echo "" >> "$LOG_FILE"
     log_msg "▶ START: $label"
-    # Run the command, show output live AND capture to log.
-    # rclone disables progress when stdout is a pipe, so we use a workaround:
-    # write to a temp file and replay it.
-    local tmp_log
-    tmp_log=$(mktemp)
-    "$@" > "$tmp_log" 2>&1
-    local rc=$?
-    if [ -s "$tmp_log" ]; then
-        cat "$tmp_log"
-        cat "$tmp_log" >> "$LOG_FILE"
-    fi
-    rm -f "$tmp_log"
+
+    local rc=0
+    # Stream output to both terminal and log file via tee
+    "$@" --stats-one-line --stats 5s 2>&1 | tee -a "$LOG_FILE" || rc=${PIPESTATUS[0]}
+
     log_msg "⏹ END: $label (exit code: $rc)"
     return "$rc"
 }
@@ -110,6 +105,106 @@ select_remote() {
             echo "Invalid selection."
         done
     fi
+}
+
+test_connection() {
+    echo "   Testing connection to $REMOTE ..."
+    echo ""
+
+    # Test 1: Read access (list directories)
+    echo -n "   [1/2] Read access ... "
+    if rclone lsd "$REMOTE:" &> /dev/null; then
+        echo "OK"
+    else
+        echo "FAILED"
+        _show_connection_error
+        return 1
+    fi
+
+    # Test 2: Write access (copy a test file to remote – mimics bisync behavior)
+    echo -n "   [2/2] Write access ... "
+    local test_dir=".rclone_test"
+    local test_file="connectivity_test_$$_$(date +%s).txt"
+    local test_src
+    test_src=$(mktemp)
+    echo "rclone connectivity test $(date)" > "$test_src"
+    if rclone mkdir "$REMOTE:$test_dir" &> /dev/null && \
+       rclone copyto "$test_src" "$REMOTE:$test_dir/$test_file" &> /dev/null; then
+        # Verify we can read it back
+        if rclone cat "$REMOTE:$test_dir/$test_file" &> /dev/null; then
+            echo "OK"
+        else
+            echo "WARN (write OK but read-back failed)"
+        fi
+        # Clean up
+        rclone delete "$REMOTE:$test_dir/$test_file" &> /dev/null || true
+        rclone rmdir "$REMOTE:$test_dir" &> /dev/null || true
+    else
+        # Clean up partial test artifacts
+        rclone delete "$REMOTE:$test_dir/$test_file" &> /dev/null || true
+        rclone rmdir "$REMOTE:$test_dir" &> /dev/null || true
+        rm -f "$test_src"
+        echo "FAILED"
+        echo ""
+        echo "   Your remote credentials may be invalid or expired."
+        echo "   The listing API worked, but file uploads are blocked."
+        echo "   You may need to re-authenticate:"
+        echo "     rclone config update $REMOTE"
+        _show_connection_error
+        return 1
+    fi
+    rm -f "$test_src"
+
+    # Show quota info if available
+    local about
+    about=$(rclone about "$REMOTE:" 2>/dev/null || true)
+    if [ -n "$about" ]; then
+        echo ""
+        echo "   Quota info:"
+        echo "$about" | sed 's/^/     /'
+    fi
+
+    echo ""
+    echo "   ✓ Connection OK (read + write verified)"
+    return 0
+}
+
+_show_connection_error() {
+    echo ""
+    echo "   ✗ Connection test failed for remote: $REMOTE"
+    echo ""
+    echo "   Possible causes:"
+    echo "     - Wrong credentials or expired token"
+    echo "     - Network connectivity issues"
+    echo "     - Remote misconfiguration"
+    echo "     - Insufficient write permissions"
+    echo ""
+    while true; do
+        read -rp "   [E]dit remote config  [R]etry connection  [Q]uit: " choice
+        case "$choice" in
+            [Ee])
+                echo ""
+                echo "   Opening rclone config editor..."
+                rclone config
+                echo ""
+                echo "   Retesting connection..."
+                test_connection
+                return $?
+                ;;
+            [Rr])
+                echo ""
+                test_connection
+                return $?
+                ;;
+            [Qq])
+                echo "   Quitting."
+                exit 1
+                ;;
+            *)
+                echo "   Invalid selection."
+                ;;
+        esac
+    done
 }
 
 ensure_local() {
@@ -176,17 +271,21 @@ echo "║           RCLONE SYNC MANAGER                               ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
 
-echo "=== [1/4] Checking Rclone ==="
+echo "=== [1/5] Checking Rclone ==="
 check_rclone
 
 echo ""
-echo "=== [2/4] Selecting Remote ==="
+echo "=== [2/5] Selecting Remote ==="
 select_remote
 SYNC_REMOTE="$REMOTE:$SYNC_REMOTE_PATH"
 UPLOAD_REMOTE="$REMOTE:$UPLOAD_REMOTE_PATH"
 
 echo ""
-echo "=== [3/4] Checking Folders ==="
+echo "=== [3/5] Testing Connection ==="
+test_connection
+
+echo ""
+echo "=== [4/5] Checking Folders ==="
 echo "Local:"
 ensure_local "$SYNC_LOCAL"
 ensure_local "$UPLOAD_LOCAL"
@@ -195,7 +294,7 @@ ensure_remote_dir "$SYNC_REMOTE_PATH"
 ensure_remote_dir "$UPLOAD_REMOTE_PATH"
 
 echo ""
-echo "=== [4/4] Executing Sync Jobs ==="
+echo "=== [5/5] Executing Sync Jobs ==="
 echo ""
 
 # Initialize log for this run
@@ -220,9 +319,11 @@ else
     if [ -f "$bisync_track" ]; then
         echo "   Tracking state exists – running normal bisync"
         run_and_log "bisync $SYNC_REMOTE" rclone bisync "$SYNC_LOCAL" "$SYNC_REMOTE" $RCLONE_OPTS
+        job1_rc=$?
     else
         echo "   No tracking state – using --resync for initial sync"
         run_and_log "bisync $SYNC_REMOTE (resync)" rclone bisync "$SYNC_LOCAL" "$SYNC_REMOTE" $RCLONE_OPTS --resync
+        job1_rc=$?
     fi
 fi
 echo ""
@@ -238,6 +339,24 @@ if [ -z "$(ls -A "$UPLOAD_LOCAL" 2>/dev/null)" ]; then
     log_msg "SKIP: move (local empty)"
 else
     run_and_log "move to $UPLOAD_REMOTE" rclone move "$UPLOAD_LOCAL" "$UPLOAD_REMOTE" $RCLONE_OPTS --delete-empty-src-dirs -P
+    job2_rc=$?
+fi
+
+# --- Report failures ---
+has_failures=false
+if [ "${job1_rc:-0}" -ne 0 ]; then
+    echo ""
+    echo "   ✗ Bisync failed (exit code: $job1_rc)"
+    echo "   Common fixes:"
+    echo "     - Check remote credentials / token expiry"
+    echo "     - Run: rclone config update $REMOTE"
+    echo "     - For bisync reset: rm ~/.cache/rclone/bisync/${safe_local}..${safe_remote}.path1.lst"
+    has_failures=true
+fi
+if [ "${job2_rc:-0}" -ne 0 ]; then
+    echo ""
+    echo "   ✗ Upload job failed (exit code: $job2_rc)"
+    has_failures=true
 fi
 
 log_msg "SYNC RUN COMPLETED"
@@ -268,4 +387,9 @@ show_tree "$SYNC_REMOTE_PATH"
 show_tree "$UPLOAD_REMOTE_PATH"
 
 echo ""
-echo "✅ All operations completed!"
+if [ "$has_failures" = true ]; then
+    echo "⚠️  Completed with errors. Check the messages above for details."
+    exit 1
+else
+    echo "✅ All operations completed!"
+fi
