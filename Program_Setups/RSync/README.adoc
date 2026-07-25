@@ -1,0 +1,425 @@
+= Rclone Sync Manager
+:author: Setup_rsync.sh & Monitor_rsync.sh
+:revdate: 2026-07-25
+:source-highlighter: bash
+:toc: left
+:toclevels: 1
+:icons: font
+:badges:
+
+image:https://img.shields.io/badge/rclone-1.58%2B-blue[requires rclone]
+image:https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey[]
+image:https://img.shields.io/badge/license-MIT-green[]
+
+ifdef::env-github[]
+++++
+<p align="center">
+  <img src="https://rclone.org/img/logo_on_light__horizontal_color.svg" width="400" alt="rclone">
+</p>
+++++
+endif::[]
+
+This project provides **two scripts** that turn a simple rclone setup into a
+fully automatic, self-healing sync system:
+
+* **`Setup_rsync.sh`** — interactive sync manager (run it whenever you want)
+* **`Monitor_rsync.sh`** — live dashboard (watch syncs in real time)
+* **`Setup_rsync_headless.sh`** — non-interactive wrapper for systemd/launchd
+
+No GUI, no bloat, no dependencies beyond `rclone` and `bash`.
+
+[[overview]]
+== Overview
+
+This project solves a common problem: keeping files synchronized between your
+local machine and cloud storage — reliably, with no manual effort.
+
+What you can do:
+
+* **Two-way sync** — work on files locally and on the cloud; changes flow
+  in both directions via `rclone bisync`
+* **One-way upload** — push photos, scans, or invoices to the cloud and
+  reclaim local disk space via `rclone move`
+* **Live monitoring** — see what's happening right now: active transfers,
+  storage usage, last sync activity
+* **Automatic execution** — systemd timer (Linux) or launchd (macOS) runs
+  the sync on boot and every 2 hours
+* **Self-healing** — if the sync fails (network drop, API timeout), it
+  retries automatically up to 3 times
+
+
+[[sync-modes]]
+== Sync Modes
+
+The two sync strategies cover completely different needs:
+
+=== Bidirectional Sync — `bisync`
+
+[cols="2~,3~,3~"]
+|===
+| | Local | Remote
+
+| New file
+| uploaded
+| downloaded
+
+| Deleted file
+| also deleted on remote
+| also deleted locally
+
+| Changed file
+| pushed
+| pulled
+
+| Conflict (both sides changed)
+| ⚠️ flagged for manual resolution
+| ⚠️ flagged for manual resolution
+|===
+
+rclone remembers the sync state in a **tracking file**
+(`~/.cache/rclone/bisync/`), so only the differences are transferred each time.
+
+**Use case:**  Working directories, code repos, shared document folders —
+anywhere you make changes from multiple devices.
+
+=== One-Way Upload — `move`
+
+* Files are uploaded to the remote
+* After successful upload, they are **deleted locally**
+* Empty directories are also removed (`--delete-empty-src-dirs`)
+
+This is not a sync — it's a **relocation** of data.
+
+**Use case:** Photo uploads from your phone, scanned invoices, temporary
+downloads — data that should be archived remotely and not clutter your disk.
+
+
+[[quickstart]]
+== Quick Start
+
+[source,bash]
+----
+# 1. Clone / enter the project
+cd ~/00_Sync
+
+# 2. Run the interactive sync
+bash Setup_rsync.sh
+
+# 3. In a second terminal, watch what's happening
+bash Monitor_rsync.sh
+----
+
+That's it. The script will pick your configured rclone remote, create local
+and remote folders if needed, and start syncing.
+
+If you want it to run **automatically from now on**:
+
+[source,bash]
+----
+# On Linux (systemd) — already installed
+systemctl --user status rclone-sync.timer
+
+# On macOS (launchd)
+cp rclone-sync.plist ~/Library/LaunchAgents/
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/rclone-sync.plist
+----
+
+
+[[setup-script]]
+== Script 1: Setup_rsync.sh
+
+=== What It Does
+
+|===
+| Step | What happens
+
+| `[1/4] Checking Rclone`
+| Verifies rclone is installed and supports `bisync`. Exits with a helpful
+  message if not.
+
+| `[2/4] Selecting Remote`
+| Reads all remotes from `rclone listremotes`. If there's only one, it's
+  auto-selected. If multiple, you pick from a list — or press `N` to add a
+  new one via `rclone config`.
+
+| `[3/4] Checking Folders`
+| Creates local directories if missing, creates remote directories if they
+  don't exist yet. Shows file/folder counts for each.
+
+| `[4/4] Executing Sync Jobs`
+| Runs `bisync` for the first folder, then `move` for the second. Results
+  are logged and displayed in a summary box.
+|===
+
+=== Usage
+
+[source,bash]
+----
+cd ~/00_Sync && bash Setup_rsync.sh
+----
+
+=== Configuration
+
+All settings are at the top of the file:
+
+[source,bash]
+----
+BASE_DIR="$HOME"
+SYNC_LOCAL="$BASE_DIR/00_Sync"               # → two-way bisync
+UPLOAD_LOCAL="$BASE_DIR/00_Upload_Images"     # → one-way upload + delete
+SYNC_REMOTE_PATH="00_Sync"
+UPLOAD_REMOTE_PATH="00_Upload_Images"
+----
+
+Change these to match your own folder structure and cloud paths.
+
+=== How It Handles `--resync`
+
+The first time you run the script, no bisync tracking file exists. The script
+detects this and automatically uses `--resync` to establish the initial state.
+On all subsequent runs, `--resync` is omitted — sync works incrementally
+through the tracking file. This is safe and automatic; you don't need to think
+about it.
+
+=== Output Example
+
+[source]
+----
+╔══════════════════════════════════════════════════════════════╗
+║           RCLONE SYNC MANAGER                               ║
+╚══════════════════════════════════════════════════════════════╝
+
+=== [1/4] Checking Rclone ===
+✓ Rclone ready (bisync supported)
+
+=== [2/4] Selecting Remote ===
+✓ Auto-selected remote: YandexDisk
+
+=== [3/4] Checking Folders ===
+Local:
+  ✓ /home/jonas/00_Sync  (7 files, 1 folders)
+  ✓ /home/jonas/00_Upload_Images  (0 files, 0 folders)
+Remote:
+  ✓ Remote exists: YandexDisk:00_Sync
+  ✓ Remote exists: YandexDisk:00_Upload_Images
+
+=== [4/4] Executing Sync Jobs ===
+
+▶ Job 1: Bidirectional Sync
+   Local:  /home/jonas/00_Sync
+   Remote: YandexDisk:00_Sync
+
+   Tracking state exists – running normal bisync
+
+▶ Job 2: Upload & Delete Local
+   Local:  /home/jonas/00_Upload_Images
+   Remote: YandexDisk:00_Upload_Images
+
+   Local folder empty. Nothing to upload.
+
+All operations completed!
+----
+
+
+[[monitor-script]]
+== Script 2: Monitor_rsync.sh
+
+=== What It Shows
+
+A live terminal dashboard that refreshes every 2 seconds:
+
+```
+╔══════════════════════════════════════════════════════════════╗
+║  RCLONE SYNC MONITOR  2026-07-25 15:31:01                   ║
+╚══════════════════════════════════════════════════════════════╝
+
+─── Active Jobs ─────────────────────────────────────────────
+  PID 161042  rclone bisync ... (running since 16:07)
+
+─── Local Storage ─────────────────────────────────────────────
+  Sync folder        /home/jonas/00_Sync (92K)
+  Upload folder      /home/jonas/00_Upload_Images (4,0K)
+
+─── Cloud Storage (YandexDisk) ────────────────────────────────
+  Total:   410 GiB
+  Used:    90.846 GiB
+  Free:    319.154 GiB
+  YandexDisk:00_Sync             7 items
+  YandexDisk:00_Upload_Images    3 items
+
+─── Recent Activity ───────────────────────────────────────────
+  [2026-07-25 15:33:50] SYNC RUN STARTED (remote: YandexDisk)
+  [2026-07-25 15:33:50] ▶ START: bisync YandexDisk:00_Sync
+  [2026-07-25 15:33:58] ⏹ END: bisync YandexDisk:00_Sync (exit code: 0)
+
+  Press Ctrl+C to stop monitoring (refreshes every 2s)
+```
+
+=== Usage
+
+[source,bash]
+----
+cd ~/00_Sync && bash Monitor_rsync.sh
+----
+
+Exit with `Ctrl+C`. Run it in a second terminal while the sync is active.
+
+
+[[autostart]]
+== Autostart
+
+The sync can run **automatically on boot** and **every 2 hours** — no manual
+interaction needed. If it fails (network issue, API timeout) it auto-retries
+up to 3 times.
+
+=== Linux — systemd (installed ✓)
+
+The systemd timer is already active:
+
+[source,bash]
+----
+# Status
+systemctl --user status rclone-sync.timer
+
+# Recent sync runs
+journalctl --user -u rclone-sync.service -n 30
+
+# Run manually (for testing)
+systemctl --user start rclone-sync.service
+----
+
+Configuration:
+
+|===
+| File | Purpose
+
+| `~/.config/systemd/user/rclone-sync.service`
+| The service — runs `Setup_rsync_headless.sh` once.
+  `Restart=on-failure` with `RestartSec=30`, gives up after 3 failures in
+  10 minutes.
+
+| `~/.config/systemd/user/rclone-sync.timer`
+| The trigger — fires 2 minutes after boot and every 2 hours thereafter.
+|===
+
+==== Changing the interval
+
+[source,bash]
+----
+systemctl --user edit rclone-sync.timer
+----
+
+Override `OnUnitActiveSec=` (e.g. `30min`, `6h`, `1d`), then:
+
+[source,bash]
+----
+systemctl --user daemon-reload
+systemctl --user restart rclone-sync.timer
+----
+
+==== Disable
+
+[source,bash]
+----
+systemctl --user disable --now rclone-sync.timer
+----
+
+=== macOS — launchd
+
+A ready-made `.plist` is included: `rclone-sync.plist`. It runs the headless
+script on boot and every 2 hours, with background priority and low I/O impact.
+
+[source,bash]
+----
+# Install
+cp rclone-sync.plist ~/Library/LaunchAgents/
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/rclone-sync.plist
+
+# Check status
+launchctl print gui/$(id -u)/local.rclone.sync
+
+# Run immediately
+launchctl kickstart gui/$(id -u)/local.rclone.sync
+
+# Disable
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/rclone-sync.plist
+----
+
+The plist:
+
+* Passes `HOME` and `PATH` explicitly (launchd runs with a minimal environment)
+* Uses `StartInterval: 7200` (2 hours) + `RunAtLoad: true` (on boot)
+* Logs to `~/.rclone_sync.log` (same as the interactive script)
+* Runs at `Nice: 10` (low CPU priority) and `LowPriorityIO: true`
+
+
+[[flags]]
+== Optimization Flags
+
+Both scripts pass these flags to rclone for production reliability:
+
+|===
+| Flag | Effect
+
+| `--transfers 4`
+| Transfer up to 4 files in parallel. Speeds up batches of small files
+  significantly.
+
+| `--low-level-retries 10`
+| Retry on transient errors (network blips, rate limits) up to 10 times
+  before giving up. Prevents spurious failures.
+|===
+
+
+[[faq]]
+== FAQ & Troubleshooting
+
+=== Bisync fails with "directory not found"
+
+The remote directory doesn't exist. Step `[3/4]` in the script creates it
+automatically via `rclone mkdir`. If you see this error, the script version
+might be outdated — run the latest one.
+
+=== "Bisync aborted. Must run --resync to recover"
+
+The tracking file was corrupted (e.g. power loss during a sync). Simply
+re-run the script — it detects the missing/incomplete tracking and uses
+`--resync` automatically.
+
+If that doesn't help:
+
+[source,bash]
+----
+rm -rf ~/.cache/rclone/bisync/
+bash Setup_rsync.sh
+----
+
+=== "prior lock file found"
+
+Two bisync runs are trying to work on the same folder at the same time.
+This is a safety feature. Wait for the other one to finish, or if it was
+interrupted:
+
+[source,bash]
+----
+rm -f ~/.cache/rclone/bisync/home_jonas_00_Sync..YandexDisk_00_Sync.lck
+----
+
+=== No rclone output shown in the terminal
+
+Both scripts redirect rclone's output through a temporary file instead of a
+pipe. This lets rclone detect a real terminal and show its progress display
+normally. If you still see nothing, update rclone (bisync progress was added
+in version 1.58).
+
+=== macOS: "mapfile: command not found"
+
+The default bash on macOS is version 3.2 — it doesn't have `mapfile`.
+Install a modern bash via Homebrew:
+
+[source,bash]
+----
+brew install bash
+# Then explicitly run with bash 4+:
+bash Setup_rsync.sh
+----
