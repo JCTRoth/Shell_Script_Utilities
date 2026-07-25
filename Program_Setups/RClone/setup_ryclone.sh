@@ -54,6 +54,74 @@ run_and_log() {
 # FUNCTIONS
 # ==============================================================================
 
+setup_sync_timer() {
+    local interval="${1:-2min}"
+    local script_dir
+    script_dir="$(cd "$(dirname "$0")" && pwd)"
+    local headless_script="$script_dir/setup_ryclone_headless.sh"
+    local service_dir="$HOME/.config/systemd/user"
+    local service_file="$service_dir/rclone-sync.service"
+    local timer_file="$service_dir/rclone-sync.timer"
+
+    echo "   Setting up automatic sync every $interval..."
+
+    # Ensure headless script exists and is executable
+    if [ ! -f "$headless_script" ]; then
+        echo "   ✗ Headless script not found: $headless_script"
+        return 1
+    fi
+    chmod +x "$headless_script"
+
+    # Create systemd user directory if needed
+    mkdir -p "$service_dir"
+
+    # Create service file
+    cat > "$service_file" << EOF
+[Unit]
+Description=Rclone Sync Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=$headless_script
+WorkingDirectory=$script_dir
+StandardOutput=journal
+StandardError=journal
+Restart=on-failure
+RestartSec=30
+EOF
+
+    # Create timer file
+    cat > "$timer_file" << EOF
+[Unit]
+Description=Run Rclone Sync Every $interval
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=$interval
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+
+    # Reload, enable, and start
+    systemctl --user daemon-reload
+    systemctl --user enable rclone-sync.timer 2>/dev/null || true
+    systemctl --user start rclone-sync.timer
+
+    # Verify
+    if systemctl --user is-active --quiet rclone-sync.timer; then
+        echo "   ✓ Timer active – sync will run every $interval"
+        echo "   ✓ Service: $service_file"
+        echo "   ✓ Timer:   $timer_file"
+    else
+        echo "   ✗ Timer failed to start. Check: systemctl --user status rclone-sync.timer"
+        return 1
+    fi
+}
+
 check_rclone() {
     if ! command -v rclone &> /dev/null; then
         echo "ERROR: rclone not found. Install it first:"
@@ -271,21 +339,21 @@ echo "║           RCLONE SYNC MANAGER                               ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
 
-echo "=== [1/5] Checking Rclone ==="
+echo "=== [1/6] Checking Rclone ==="
 check_rclone
 
 echo ""
-echo "=== [2/5] Selecting Remote ==="
+echo "=== [2/6] Selecting Remote ==="
 select_remote
 SYNC_REMOTE="$REMOTE:$SYNC_REMOTE_PATH"
 UPLOAD_REMOTE="$REMOTE:$UPLOAD_REMOTE_PATH"
 
 echo ""
-echo "=== [3/5] Testing Connection ==="
+echo "=== [3/6] Testing Connection ==="
 test_connection
 
 echo ""
-echo "=== [4/5] Checking Folders ==="
+echo "=== [4/6] Checking Folders ==="
 echo "Local:"
 ensure_local "$SYNC_LOCAL"
 ensure_local "$UPLOAD_LOCAL"
@@ -294,7 +362,7 @@ ensure_remote_dir "$SYNC_REMOTE_PATH"
 ensure_remote_dir "$UPLOAD_REMOTE_PATH"
 
 echo ""
-echo "=== [5/5] Executing Sync Jobs ==="
+echo "=== [5/6] Executing Sync Jobs ==="
 echo ""
 
 # Initialize log for this run
@@ -385,6 +453,11 @@ echo ""
 echo "📂 Remote contents managed by this script:"
 show_tree "$SYNC_REMOTE_PATH"
 show_tree "$UPLOAD_REMOTE_PATH"
+
+echo ""
+echo "=== [6/6] Setting Up Automatic Sync ==="
+echo ""
+setup_sync_timer "2min"
 
 echo ""
 if [ "$has_failures" = true ]; then

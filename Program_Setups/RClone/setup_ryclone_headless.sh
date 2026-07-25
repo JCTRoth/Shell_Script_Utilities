@@ -33,9 +33,6 @@ if [ -z "$REMOTE" ]; then
     exit 1
 fi
 # Shared rclone optimization flags
-# --transfers 4:         parallel file transfers
-# --low-level-retries 10: survive minor network drops
-# --rc / --rc-enable-metrics: optional remote control for monitoring
 RCLONE_OPTS="--transfers 4 --low-level-retries 10"
 
 echo "✓ Remote: $REMOTE"
@@ -56,7 +53,17 @@ for dir in "$SYNC_LOCAL" "$UPLOAD_LOCAL"; do
     fi
 done
 
-# 5. Check remote folders
+# 5. Connection test (non-interactive – just log and exit on failure)
+echo ""
+echo "   Testing connection to $REMOTE ..."
+if rclone lsd "$REMOTE:" &> /dev/null; then
+    echo "   ✓ Read access OK"
+else
+    echo "   ✗ Read access FAILED – remote unreachable"
+    exit 1
+fi
+
+# 6. Check remote folders
 for path in "$SYNC_REMOTE_PATH" "$UPLOAD_REMOTE_PATH"; do
     full="$REMOTE:$path"
     if ! rclone lsf "$full" &> /dev/null; then
@@ -65,29 +72,36 @@ for path in "$SYNC_REMOTE_PATH" "$UPLOAD_REMOTE_PATH"; do
     fi
 done
 
-# 6. Bisync (with or without --resync)
+# 7. Bisync (with or without --resync)
 echo ""
 echo "▶ Job 1: Bisync  $SYNC_LOCAL  ↔  $SYNC_REMOTE"
 safe_local=$(echo "$SYNC_LOCAL" | sed 's|[/:]|_|g; s|^_||')
 safe_remote=$(echo "$SYNC_REMOTE" | sed 's|[/:]|_|g')
 bisync_track="$HOME/.cache/rclone/bisync/${safe_local}..${safe_remote}.path1.lst"
 
+job1_rc=0
 if [ -f "$bisync_track" ]; then
     echo "   Tracking exists – normal bisync"
-    rclone bisync "$SYNC_LOCAL" "$SYNC_REMOTE" $RCLONE_OPTS
+    rclone bisync "$SYNC_LOCAL" "$SYNC_REMOTE" $RCLONE_OPTS --stats-one-line --stats 5s 2>&1 || job1_rc=$?
 else
     echo "   No tracking – initial sync with --resync"
-    rclone bisync "$SYNC_LOCAL" "$SYNC_REMOTE" $RCLONE_OPTS --resync
+    rclone bisync "$SYNC_LOCAL" "$SYNC_REMOTE" $RCLONE_OPTS --resync --stats-one-line --stats 5s 2>&1 || job1_rc=$?
 fi
 
-# 7. Move/Upload
+# 8. Move/Upload
 echo ""
 echo "▶ Job 2: Move  $UPLOAD_LOCAL  →  $UPLOAD_REMOTE"
+job2_rc=0
 if [ -z "$(ls -A "$UPLOAD_LOCAL" 2>/dev/null)" ]; then
     echo "   Local folder empty – nothing to upload"
 else
-    rclone move "$UPLOAD_LOCAL" "$UPLOAD_REMOTE" $RCLONE_OPTS --delete-empty-src-dirs -P
+    rclone move "$UPLOAD_LOCAL" "$UPLOAD_REMOTE" $RCLONE_OPTS --delete-empty-src-dirs -P --stats-one-line --stats 5s 2>&1 || job2_rc=$?
 fi
 
+# 9. Summary
 echo ""
-echo "✅ Sync completed at $(date "+%Y-%m-%d %H:%M:%S")"
+if [ "$job1_rc" -ne 0 ] || [ "$job2_rc" -ne 0 ]; then
+    echo "⚠️  Sync completed with errors (bisync: $job1_rc, move: $job2_rc)" | tee -a "$LOG_FILE"
+else
+    echo "✅ Sync completed at $(date "+%Y-%m-%d %H:%M:%S")" | tee -a "$LOG_FILE"
+fi
