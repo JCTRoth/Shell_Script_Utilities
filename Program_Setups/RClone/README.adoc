@@ -1,5 +1,5 @@
 = Rclone Sync Manager
-:author: Setup_rsync.sh & Monitor_rsync.sh
+:author: setup_ryclone.sh & monitor_ryclone.sh
 :revdate: 2026-07-25
 :source-highlighter: bash
 :toc: left
@@ -22,9 +22,9 @@ endif::[]
 This project provides **two scripts** that turn a simple rclone setup into a
 fully automatic, self-healing sync system:
 
-* **`Setup_rsync.sh`** — interactive sync manager (run it whenever you want)
-* **`Monitor_rsync.sh`** — live dashboard (watch syncs in real time)
-* **`Setup_rsync_headless.sh`** — non-interactive wrapper for systemd/launchd
+* **`setup_ryclone.sh`** — interactive sync manager (run it whenever you want)
+* **`monitor_ryclone.sh`** — live dashboard (watch syncs in real time)
+* **`setup_ryclone_headless.sh`** — non-interactive wrapper for systemd/launchd
 
 No GUI, no bloat, no dependencies beyond `rclone` and `bash`.
 
@@ -103,10 +103,10 @@ downloads — data that should be archived remotely and not clutter your disk.
 cd ~/00_Sync
 
 # 2. Run the interactive sync
-bash Setup_rsync.sh
+bash setup_ryclone.sh
 
 # 3. In a second terminal, watch what's happening
-bash Monitor_rsync.sh
+bash monitor_ryclone.sh
 ----
 
 That's it. The script will pick your configured rclone remote, create local
@@ -126,7 +126,7 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/rclone-sync.plist
 
 
 [[setup-script]]
-== Script 1: Setup_rsync.sh
+== Script 1: setup_ryclone.sh
 
 === What It Does
 
@@ -155,7 +155,7 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/rclone-sync.plist
 
 [source,bash]
 ----
-cd ~/00_Sync && bash Setup_rsync.sh
+cd ~/00_Sync && bash setup_ryclone.sh
 ----
 
 === Configuration
@@ -222,7 +222,7 @@ All operations completed!
 
 
 [[monitor-script]]
-== Script 2: Monitor_rsync.sh
+== Script 2: monitor_ryclone.sh
 
 === What It Shows
 
@@ -259,7 +259,7 @@ A live terminal dashboard that refreshes every 2 seconds:
 
 [source,bash]
 ----
-cd ~/00_Sync && bash Monitor_rsync.sh
+cd ~/00_Sync && bash monitor_ryclone.sh
 ----
 
 Exit with `Ctrl+C`. Run it in a second terminal while the sync is active.
@@ -294,7 +294,7 @@ Configuration:
 | File | Purpose
 
 | `~/.config/systemd/user/rclone-sync.service`
-| The service — runs `Setup_rsync_headless.sh` once.
+| The service — runs `setup_ryclone_headless.sh` once.
   `Restart=on-failure` with `RestartSec=30`, gives up after 3 failures in
   10 minutes.
 
@@ -391,7 +391,7 @@ If that doesn't help:
 [source,bash]
 ----
 rm -rf ~/.cache/rclone/bisync/
-bash Setup_rsync.sh
+bash setup_ryclone.sh
 ----
 
 === "prior lock file found"
@@ -421,5 +421,5 @@ Install a modern bash via Homebrew:
 ----
 brew install bash
 # Then explicitly run with bash 4+:
-bash Setup_rsync.sh
+bash setup_ryclone.sh
 ----

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Non-interactive wrapper for Setup_rsync.sh (used by cron / launchd)
+# Non-interactive wrapper for setup_ryclone.sh (used by cron / launchd)
 # - Skips interactive prompts (auto-selects first remote)
 # - Suppresses clear/ANSI codes
 # - Logs to journal + log file

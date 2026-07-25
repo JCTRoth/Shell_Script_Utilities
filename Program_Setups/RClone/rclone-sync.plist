@@ -24,7 +24,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Users/jonas/00_Sync/Setup_rsync_headless.sh</string>
+        <string>/Users/jonas/00_Sync/setup_ryclone_headless.sh</string>
     </array>
 
     <key>EnvironmentVariables</key>

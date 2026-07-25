@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # Rclone Sync Monitor – continuously shows rclone sync activity
-# Place in ~/00_Sync/ and run alongside Setup_rsync.sh for live monitoring
+# Place in ~/00_Sync/ and run alongside setup_ryclone.sh for live monitoring
 # ==============================================================================
 
 set -euo pipefail
@@ -12,7 +12,7 @@ REFRESH_INTERVAL=2  # seconds between refreshes
 # Find the main sync script's config (same folder as this monitor)
 # ------------------------------------------------------------------------------
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-CONFIG_FILE="${SCRIPT_DIR}/Setup_rsync.sh"
+CONFIG_FILE="${SCRIPT_DIR}/setup_ryclone.sh"
 
 # Parse remote folder names from the setup script (fallback defaults)
 if [ -f "$CONFIG_FILE" ]; then
@@ -47,7 +47,7 @@ info_line() {
 # Detect the first configured remote
 # ------------------------------------------------------------------------------
 detect_remote() {
-    # Simply use the first configured remote (same approach as Setup_rsync.sh)
+    # Simply use the first configured remote (same approach as setup_ryclone.sh)
     rclone listremotes 2>/dev/null | head -1 | sed 's/:$//'
 }
 
