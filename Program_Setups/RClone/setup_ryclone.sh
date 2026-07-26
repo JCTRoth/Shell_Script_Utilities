@@ -33,20 +33,13 @@ log_msg() {
     echo "[$ts] $msg" >> "$LOG_FILE"
 }
 
-# Helper: run a command and log its output
-# Streams output live to the terminal while also writing to the log file.
-# Uses --stats-one-line to force rclone to print progress even when not a TTY.
+# Helper: run a command showing live output.
+# Log file is only written on failure (checked after all jobs).
 run_and_log() {
     local label="$1"
     shift
-    echo "" >> "$LOG_FILE"
-    log_msg "▶ START: $label"
-
     local rc=0
-    # Stream output to both terminal and log file via tee
-    "$@" --stats-one-line --stats 5s 2>&1 | tee -a "$LOG_FILE" || rc=${PIPESTATUS[0]}
-
-    log_msg "⏹ END: $label (exit code: $rc)"
+    "$@" --stats-one-line --stats 5s 2>&1 || rc=$?
     return "$rc"
 }
 
@@ -365,11 +358,6 @@ echo ""
 echo "=== [5/6] Executing Sync Jobs ==="
 echo ""
 
-# Initialize log for this run
-echo "" >> "$LOG_FILE"
-echo "═══════════════════════════════════════════════════════════════" >> "$LOG_FILE"
-log_msg "SYNC RUN STARTED (remote: $REMOTE)"
-
 # --- Job 1: Bisync ---
 echo "▶ Job 1: Bidirectional Sync"
 echo "   Local:  $SYNC_LOCAL"
@@ -377,14 +365,25 @@ echo "   Remote: $SYNC_REMOTE"
 echo ""
 if [ -z "$(ls -A "$SYNC_LOCAL" 2>/dev/null)" ] && [ "$(rclone lsf "$SYNC_REMOTE" 2>/dev/null | wc -l)" -eq 0 ]; then
     echo "   Both sides empty. Skipping bisync."
-    log_msg "SKIP: bisync (both sides empty)"
 else
     # Build the bisync tracking file name (rclone convention: / → _, : → _)
     safe_local=$(echo "$SYNC_LOCAL" | sed 's|[/:]|_|g; s|^_||')
     safe_remote=$(echo "$SYNC_REMOTE" | sed 's|[/:]|_|g')
-    bisync_track="$HOME/.cache/rclone/bisync/${safe_local}..${safe_remote}.path1.lst"
+    BISYNC_DIR="$HOME/.cache/rclone/bisync"
+    bisync_prefix="${safe_local}..${safe_remote}"
+    bisync_track="$BISYNC_DIR/${bisync_prefix}.path1.lst"
 
-    if [ -f "$bisync_track" ]; then
+    # Auto-resolve stale locks from previous crashes
+    needs_resync=false
+    if [ -f "${bisync_track}-err" ]; then
+        echo "   ! Stale bisync lock detected – cleaning and forcing --resync"
+        rm -f "$BISYNC_DIR/${bisync_prefix}.path1.lst-err" \
+              "$BISYNC_DIR/${bisync_prefix}.path2.lst-err"
+        rm -f "$bisync_track" "$BISYNC_DIR/${bisync_prefix}.path2.lst"
+        needs_resync=true
+    fi
+
+    if [ -f "$bisync_track" ] && [ "$needs_resync" = false ]; then
         echo "   Tracking state exists – running normal bisync"
         run_and_log "bisync $SYNC_REMOTE" rclone bisync "$SYNC_LOCAL" "$SYNC_REMOTE" $RCLONE_OPTS
         job1_rc=$?
@@ -404,7 +403,6 @@ echo "   ⚠️  WARNING: Local files will be DELETED after upload!"
 echo ""
 if [ -z "$(ls -A "$UPLOAD_LOCAL" 2>/dev/null)" ]; then
     echo "   Local folder empty. Nothing to upload."
-    log_msg "SKIP: move (local empty)"
 else
     run_and_log "move to $UPLOAD_REMOTE" rclone move "$UPLOAD_LOCAL" "$UPLOAD_REMOTE" $RCLONE_OPTS --delete-empty-src-dirs -P
     job2_rc=$?
@@ -420,14 +418,23 @@ if [ "${job1_rc:-0}" -ne 0 ]; then
     echo "     - Run: rclone config update $REMOTE"
     echo "     - For bisync reset: rm ~/.cache/rclone/bisync/${safe_local}..${safe_remote}.path1.lst"
     has_failures=true
+    # Write error log (rclone already logged to journal, save to file too)
+    log_msg "✗ Bisync failed (exit: $job1_rc)"
 fi
 if [ "${job2_rc:-0}" -ne 0 ]; then
     echo ""
     echo "   ✗ Upload job failed (exit code: $job2_rc)"
     has_failures=true
+    log_msg "✗ Upload failed (exit: $job2_rc)"
 fi
 
-log_msg "SYNC RUN COMPLETED"
+if [ "$has_failures" = false ]; then
+    # Remove empty log file if no errors occurred
+    if [ -f "$LOG_FILE" ] && [ ! -s "$LOG_FILE" ]; then
+        rm -f "$LOG_FILE"
+    fi
+fi
+
 echo ""
 echo "╔══════════════════════════════════════════════════════════════╗"
 echo "║           SYNC CONFIGURATION SUMMARY                        ║"
@@ -466,3 +473,5 @@ if [ "$has_failures" = true ]; then
 else
     echo "✅ All operations completed!"
 fi
+
+# vim: set ts=4 sw=4 et:

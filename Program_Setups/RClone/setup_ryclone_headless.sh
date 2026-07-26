@@ -10,32 +10,37 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 LOG_FILE="$HOME/00_Sync/.rclone_sync.log"
 
-# Redirect all output to log file
-exec > >(tee -a "$LOG_FILE") 2>&1
+# Collect output in memory – only write to log file on failure
+OUTPUT=""
+log() { OUTPUT+="$*\n"; }
 
-echo ""
-echo "═══════════════════════════════════════════════════════════════"
-echo "  RCLONE SYNC (automatic – cron / launchd)"
-echo "  $(date "+%Y-%m-%d %H:%M:%S")"
-echo "═══════════════════════════════════════════════════════════════"
+timestamp() { date "+%Y-%m-%d %H:%M:%S"; }
+
+log ""
+log "═══════════════════════════════════════════════════════════════"
+log "  RCLONE SYNC (automatic – cron / launchd)"
+log "  $(timestamp)"
+log "═══════════════════════════════════════════════════════════════"
+
+OVERALL_RC=0
 
 # 1. Check rclone
 if ! command -v rclone &> /dev/null; then
-    echo "ERROR: rclone not found."
+    log "ERROR: rclone not found."
+    OVERALL_RC=1
     exit 1
 fi
-echo "✓ Rclone found: $(rclone version 2>&1 | head -1)"
+log "✓ Rclone found: $(rclone version 2>&1 | head -1)"
 
 # 2. Auto-select first remote (no prompt)
 REMOTE=$(rclone listremotes 2>/dev/null | head -1 | sed 's/:$//')
 if [ -z "$REMOTE" ]; then
-    echo "ERROR: No remotes configured."
+    log "ERROR: No remotes configured."
     exit 1
 fi
-# Shared rclone optimization flags
 RCLONE_OPTS="--transfers 4 --low-level-retries 10"
 
-echo "✓ Remote: $REMOTE"
+log "✓ Remote: $REMOTE"
 
 # 3. Paths
 SYNC_LOCAL="$HOME/00_Sync"
@@ -48,18 +53,14 @@ UPLOAD_REMOTE="$REMOTE:$UPLOAD_REMOTE_PATH"
 # 4. Check local folders
 for dir in "$SYNC_LOCAL" "$UPLOAD_LOCAL"; do
     if [ ! -d "$dir" ]; then
-        echo "  Creating: $dir"
+        log "  Creating: $dir"
         mkdir -p "$dir"
     fi
 done
 
-# 5. Connection test (non-interactive – just log and exit on failure)
-echo ""
-echo "   Testing connection to $REMOTE ..."
-if rclone lsd "$REMOTE:" &> /dev/null; then
-    echo "   ✓ Read access OK"
-else
-    echo "   ✗ Read access FAILED – remote unreachable"
+# 5. Connection test
+if ! rclone lsd "$REMOTE:" &> /dev/null; then
+    log "✗ Read access FAILED – remote unreachable"
     exit 1
 fi
 
@@ -67,36 +68,57 @@ fi
 for path in "$SYNC_REMOTE_PATH" "$UPLOAD_REMOTE_PATH"; do
     full="$REMOTE:$path"
     if ! rclone lsf "$full" &> /dev/null; then
-        echo "  Creating remote: $full"
         rclone mkdir "$full"
     fi
 done
 
-# 7. Bisync (with or without --resync)
-echo ""
-echo "▶ Job 1: Bisync  $SYNC_LOCAL  ↔  $SYNC_REMOTE"
+# 7. Auto-resolve bisync locks: clean stale tracking state
+BISYNC_DIR="$HOME/.cache/rclone/bisync"
 safe_local=$(echo "$SYNC_LOCAL" | sed 's|[/:]|_|g; s|^_||')
 safe_remote=$(echo "$SYNC_REMOTE" | sed 's|[/:]|_|g')
-bisync_track="$HOME/.cache/rclone/bisync/${safe_local}..${safe_remote}.path1.lst"
+bisync_prefix="${safe_local}..${safe_remote}"
+bisync_track="$BISYNC_DIR/${bisync_prefix}.path1.lst"
 
+# If previous sync crashed, clean error tracking files and force --resync
+needs_resync=false
+if [ -f "${bisync_track}-err" ]; then
+    log "  Cleaning stale bisync error state – will use --resync"
+    rm -f "$BISYNC_DIR/${bisync_prefix}.path1.lst-err" \
+          "$BISYNC_DIR/${bisync_prefix}.path2.lst-err"
+    # Also remove old tracking so --resync is triggered
+    rm -f "$bisync_track" "$BISYNC_DIR/${bisync_prefix}.path2.lst"
+    needs_resync=true
+fi
+
+# 8. Bisync
 job1_rc=0
-if [ -f "$bisync_track" ]; then
-    echo "   Tracking exists – normal bisync"
+if [ -f "$bisync_track" ] && [ "$needs_resync" = false ]; then
     rclone bisync "$SYNC_LOCAL" "$SYNC_REMOTE" $RCLONE_OPTS --stats-one-line --stats 5s 2>&1 || job1_rc=$?
 else
-    echo "   No tracking – initial sync with --resync"
     rclone bisync "$SYNC_LOCAL" "$SYNC_REMOTE" $RCLONE_OPTS --resync --stats-one-line --stats 5s 2>&1 || job1_rc=$?
 fi
 
-# 8. Move/Upload
-echo ""
-echo "▶ Job 2: Move  $UPLOAD_LOCAL  →  $UPLOAD_REMOTE"
+# 9. Move/Upload
 job2_rc=0
-if [ -z "$(ls -A "$UPLOAD_LOCAL" 2>/dev/null)" ]; then
-    echo "   Local folder empty – nothing to upload"
+UPLOAD_FILES=$(ls -A "$UPLOAD_LOCAL" 2>/dev/null || true)
+if [ -z "$UPLOAD_FILES" ]; then
+    : # nothing to upload – silent
 else
     rclone move "$UPLOAD_LOCAL" "$UPLOAD_REMOTE" $RCLONE_OPTS --delete-empty-src-dirs -P --stats-one-line --stats 5s 2>&1 || job2_rc=$?
 fi
+
+# 10. Write log file only on failure
+if [ "$job1_rc" -ne 0 ] || [ "$job2_rc" -ne 0 ]; then
+    log "⚠️  Errors: bisync=$job1_rc  move=$job2_rc"
+    OVERALL_RC=1
+fi
+
+if [ "$OVERALL_RC" -ne 0 ]; then
+    # Append collected output to log file
+    echo -e "$OUTPUT" >> "$LOG_FILE"
+fi
+
+exit "$OVERALL_RC"
 
 # 9. Summary
 echo ""
