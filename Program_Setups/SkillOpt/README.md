@@ -1,6 +1,6 @@
 # SkillOpt CLI Usage Guide
 
-This guide explains how to use the SkillOpt CLI tools (`skillopt-eval`, `skillopt-sleep`, `skillopt-train`) in your codebase, including installation instructions for **Linux** and **macOS**.
+This guide explains how to use the SkillOpt CLI tools (`skillopt-eval`, `skillopt-sleep`, `skillopt-train`) in your codebase, including installation instructions for Linux, macOS, windows.
 
 ---
 

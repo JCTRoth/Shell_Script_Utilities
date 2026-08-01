@@ -27,6 +27,7 @@ if ([version]$pythonVersion -lt [version]"3.10") {
 Write-Host "Installing SkillOpt..."
 python -m pip install --upgrade pip
 python -m pip install skillopt
+python3 -m pip install --upgrade typing-extensions
 
 # Verify installation
 try {

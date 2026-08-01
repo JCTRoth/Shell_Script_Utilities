@@ -31,6 +31,7 @@ fi
 echo "Installing SkillOpt..."
 python3 -m pip install --upgrade pip
 python3 -m pip install skillopt
+python3 -m pip install --upgrade typing-extensions
 
 # Verify installation
 if python3 -c "import skillopt; print('SkillOpt installed successfully!')"; then
