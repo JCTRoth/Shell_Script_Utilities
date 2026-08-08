@@ -1,0 +1,280 @@
+= SkillOpt CLI Usage Guide
+:toc:
+:toclevels: 1
+:sectnums:
+:icons: font
+:hide-uri-scheme:
+:tip-caption: TIP
+
+This guide explains how to use the SkillOpt CLI tools (`skillopt-eval`, `skillopt-sleep`, `skillopt-train`) in your codebase, including installation instructions for Linux, macOS, and Windows.
+
+== Prerequisites
+
+* Python 3.10+
+* SkillOpt installed (`pip install skillopt`)
+* Access to LLM backends (e.g., Azure OpenAI, OpenAI, Anthropic, DeepSeek, MiMo/MiniMax, or local OpenAI-compatible models via vLLM/Ollama)
+
+== Installation
+
+=== Linux (Fedora/Ubuntu)
+```
+sudo ./install_skillopt_linux.sh
+```
+
+=== macOS
+```
+./install_skillopt_macos.sh
+```
+
+=== Windows
+Open PowerShell as Administrator and run:
+```
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force
+.\install_skillopt_windows.ps1
+```
+
+== Setup
+
+=== Install SkillOpt
+Follow the installation steps for your OS above.
+
+=== Configure Environment Variables
+Set the required credentials for your target LLM backend.
+
+==== DeepSeek
+To use hosted DeepSeek models (e.g., `deepseek-chat` or `deepseek-reasoner`):
+[source,bash]
+----
+export OPENAI_BASE_URL="https://api.deepseek.com/v1"
+export OPENAI_API_KEY="your-deepseek-api-key"
+----
+
+For `skillopt-sleep` offline self-evolution with DeepSeek:
+[source,bash]
+----
+export AZURE_OPENAI_ENDPOINT="https://api.deepseek.com"
+export AZURE_OPENAI_API_KEY="your-deepseek-api-key"
+export AZURE_OPENAI_AUTH_MODE="openai_compatible"
+----
+
+==== MiMo / MiniMax
+To use MiMo or MiniMax models via OpenAI-compatible endpoints:
+[source,bash]
+----
+export OPENAI_BASE_URL="https://api.minimax.chat/v1"
+export OPENAI_API_KEY="your-mimo-api-key"
+----
+
+==== Azure OpenAI
+[source,bash]
+----
+export AZURE_OPENAI_ENDPOINT="https://your-endpoint.openai.azure.com/"
+export AZURE_OPENAI_API_KEY="your-api-key"
+export AZURE_OPENAI_AUTH_MODE="openai_compatible"
+----
+
+==== OpenAI
+[source,bash]
+----
+export OPENAI_API_KEY="your-api-key"
+----
+
+==== Local OpenAI-Compatible Endpoints (vLLM, Ollama, LiteLLM)
+[source,bash]
+----
+export OPENAI_BASE_URL="http://localhost:8000/v1"  # e.g., vLLM or Ollama
+export OPENAI_API_KEY="none"                       # Optional depending on server setup
+----
+
+== CLI Tools Overview
+
+[cols="1,2,2", options="header"]
+|===
+| Command | Purpose | When to Use
+
+| `skillopt-eval`
+| Evaluate trained skills on benchmarks
+| After training, to test skill performance
+
+| `skillopt-sleep`
+| Offline self-evolution (harvest -> mine -> replay -> consolidate)
+| Nightly or periodic runs to improve skills autonomously
+
+| `skillopt-train`
+| Train skills on custom datasets
+| During development or to adapt skills to new tasks
+|===
+
+== How to Use Each Command
+
+=== `skillopt-eval`
+Evaluate trained skills on benchmarks to measure performance.
+
+*Usage:*
+[source,bash]
+----
+skillopt-eval --config <path_to_config.yaml> --backend <backend_name>
+----
+
+*Examples:*
+[source,bash]
+----
+# Using Azure OpenAI
+skillopt-eval --config configs/searchqa/default.yaml --backend azure_openai
+
+# Using DeepSeek or MiMo
+skillopt-eval --config configs/searchqa/deepseek.yaml --backend openai_compatible
+----
+
+*When to Use:*
+* After training a skill, to validate its performance on a benchmark.
+* To compare different versions of a skill across model providers.
+
+=== `skillopt-sleep`
+Run offline self-evolution to improve skills autonomously. This command:
+* Harvests agent session transcripts
+* Mines recurring tasks
+* Replays and consolidates them into long-term skills
+
+*Usage:*
+[source,bash]
+----
+skillopt-sleep run --backend <backend_name> --model <model_name>
+----
+
+*Examples:*
+[source,bash]
+----
+# Azure OpenAI
+skillopt-sleep run --backend azure_openai --model gpt-4
+
+# DeepSeek (with AZURE_OPENAI_AUTH_MODE=openai_compatible)
+skillopt-sleep run --backend azure_openai --model deepseek-chat
+----
+
+*When to Use:*
+* Nightly or periodic runs to update skills based on real-world usage.
+* To adapt skills to new patterns in agent behavior.
+
+=== `skillopt-train`
+Train skills on custom datasets or benchmarks.
+
+*Usage:*
+[source,bash]
+----
+python scripts/train.py --config <path_to_config.yaml>
+----
+
+*Example:*
+[source,bash]
+----
+python scripts/train.py --config configs/searchqa/default.yaml
+----
+
+*When to Use:*
+* During development to create new skills.
+* To fine-tune skills for specific tasks or domains.
+
+== Example Workflow
+
+=== 1. Train a Skill
+[source,bash]
+----
+python scripts/train.py --config configs/searchqa/default.yaml
+----
+
+=== 2. Evaluate the Skill
+[source,bash]
+----
+skillopt-eval --config configs/searchqa/deepseek.yaml --backend openai_compatible
+----
+
+=== 3. Run Nightly Self-Evolution
+[source,bash]
+----
+skillopt-sleep run --backend azure_openai --model deepseek-chat
+----
+
+== Configuration Files
+SkillOpt uses YAML files to define benchmarks, models, and training parameters.
+
+=== Azure / Standard Config (`configs/searchqa/default.yaml`)
+[source,yaml]
+----
+backend: azure_openai
+model: gpt-4
+benchmark:
+  name: SearchQA
+  data_dir: data/searchqa
+  splits: [train, val, test]
+----
+
+=== DeepSeek / MiMo Config (`configs/searchqa/deepseek.yaml`)
+[source,yaml]
+----
+backend: openai_compatible
+base_url: https://api.deepseek.com/v1
+model: deepseek-chat
+benchmark:
+  name: SearchQA
+  data_dir: data/searchqa
+  splits: [train, val, test]
+----
+
+== Directory Structure
+[source]
+----
+SkillOpt/
+├── configs/          # Configuration files for benchmarks
+│   └── searchqa/
+│       ├── default.yaml
+│       └── deepseek.yaml
+├── data/             # Benchmark datasets
+│   └── searchqa/
+│       ├── train/
+│       ├── val/
+│       └── test/
+├── scripts/          # Training and evaluation scripts
+│   ├── train.py
+│   └── materialize_searchqa.py
+└── skillopt/         # Core SkillOpt library
+----
+
+== GitHub Copilot & Copilot CLI Compatibility
+SkillOpt and agent skill libraries work seamlessly across both *VS Code Copilot* and *Copilot CLI* environments, though each tool manages context and application data independently.
+
+=== Resource Sharing Overview
+[cols="1,1,2", options="header"]
+|===
+| Resource Type | Shared Across Environments? | Notes
+
+| Project Code & Instructions
+| Yes
+| Both access project source files and custom instruction files (`.github/copilot-instructions.md`, `AGENTS.md`).
+
+| Skill Libraries (SkillOpt)
+| Yes
+| Skills stored in shared repo directories (`.github/skills/`, `.agents/skills/`) or user profiles (`~/.copilot/skills/`) work identically in both platforms.
+
+| Configurations & Settings
+| No
+| VS Code uses editor `settings.json`; Copilot CLI uses `~/.config/github-copilot/` and shell environment variables.
+
+| Context Caches & History
+| No
+| Conversation state, tool outputs, and context caches use different paths, formats, and filenames.
+|===
+
+=== Context Cache Locations & Formats
+* *Copilot CLI Cache* (`~/.copilot/`):
+  ** Persistent session database: `session-store.db` (SQLite)
+  ** Temporary session context: `session-state/`
+  ** Large tool output logs: `logs/copilot-YYYY-MM-DD-xxxx.log`
+
+* *VS Code Copilot Cache* (`<workspaceStorage>/<hash>/`):
+  ** Chat session JSON files: `chatSessions/<uuid>.json`
+  ** Internal UI state database: `state.vscdb` (SQLite)
+
+== Sources
+* https://microsoft.github.io/SkillOpt/docs/guideline.html[Official SkillOpt documentation]
+* https://github.com/microsoft/SkillOpt[GitHub repository]
