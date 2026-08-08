@@ -171,4 +171,7 @@ Interactive script to configure Git credentials (username and email) via interac
 
 * Prompts for Git username (required).
 * Prompts for Git email address (required).
-* Configures the values globally with `git config --global`.
+* Configures the values globally with `git config --global`
+
+== SkillOpt
+SkillOpt installer scripts and guide.
