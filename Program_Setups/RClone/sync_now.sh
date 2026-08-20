@@ -35,12 +35,22 @@ echo "╚═══════════════════════�
 
 # Parse arguments
 REMOTE=""
-for arg in "$@"; do
-    case "$arg" in
+while [ $# -gt 0 ]; do
+    case "$1" in
         --dry-run) DRY_RUN=true ;;
-        -*) ;;
-        *) REMOTE="$arg" ;;
+        -*) 
+            fail "Unknown option: $1"
+            exit 1
+            ;;
+        *) 
+            if [ -n "$REMOTE" ]; then
+                fail "Multiple remotes specified: $REMOTE and $1"
+                exit 1
+            fi
+            REMOTE="$1"
+            ;;
     esac
+    shift
 done
 
 # 1. Check rclone
@@ -96,8 +106,8 @@ for path in "$SYNC_REMOTE_PATH" "$UPLOAD_REMOTE_PATH"; do
     fi
 done
 
-# 6. Bisync
-header "Job 1: Bidirectional Sync (bisync)"
+# 6. sync
+header "Job 1: Bidirectional Sync (sync)"
 echo "   Local:  $SYNC_LOCAL"
 echo "   Remote: $SYNC_REMOTE"
 echo ""
@@ -105,46 +115,42 @@ echo ""
 # Build tracking file path
 safe_local=$(echo "$SYNC_LOCAL" | sed 's|[/:]|_|g; s|^_||')
 safe_remote=$(echo "$SYNC_REMOTE" | sed 's|[/:]|_|g')
-BISYNC_DIR="$HOME/.cache/rclone/bisync"
-bisync_prefix="${safe_local}..${safe_remote}"
-bisync_track="$BISYNC_DIR/${bisync_prefix}.path1.lst"
+sync_DIR="$HOME/.cache/rclone/sync"
+sync_prefix="${safe_local}..${safe_remote}"
+sync_track="$sync_DIR/${sync_prefix}.path1.lst"
 
-# Auto-resolve stale locks from previous crashes
-needs_resync=false
+# Ensure tracking directory exists
+mkdir -p "$sync_DIR"
 
-# Check for .lck lock file (running or interrupted bisync)
-if [ -f "$BISYNC_DIR/${bisync_prefix}.lck" ]; then
-    warn "Stale bisync lock file (.lck) found — removing it"
-    rm -f "$BISYNC_DIR/${bisync_prefix}.lck"
-    needs_resync=true
+# Initialize job return codes
+job1_rc=0
+job2_rc=0
+
+# Check for .lck lock file (running or interrupted sync)
+if [ -f "$sync_DIR/${sync_prefix}.lck" ]; then
+    warn "Stale sync lock file (.lck) found — removing it"
+    rm -f "$sync_DIR/${sync_prefix}.lck"
 fi
 
 # Check for -err tracking files (crashed with error state)
-if [ -f "${bisync_track}-err" ]; then
-    warn "Stale bisync error state detected — cleaning and forcing --resync"
-    rm -f "$BISYNC_DIR/${bisync_prefix}.path1.lst-err" \
-          "$BISYNC_DIR/${bisync_prefix}.path2.lst-err"
-    rm -f "$bisync_track" "$BISYNC_DIR/${bisync_prefix}.path2.lst"
-    needs_resync=true
+if [ -f "${sync_track}-err" ]; then
+    warn "Stale sync error state detected"
+    rm -f "${sync_track}-err" \
+          "$sync_DIR/${sync_prefix}.path2.lst-err"
+    rm -f "$sync_track" "$sync_DIR/${sync_prefix}.path2.lst"
 fi
 
-BISYNC_ARGS=("$SYNC_LOCAL" "$SYNC_REMOTE" $RCLONE_OPTS "--stats-one-line" "--stats" "5s")
+sync_ARGS=("$SYNC_LOCAL" "$SYNC_REMOTE" $RCLONE_OPTS "--stats-one-line" "--stats" "5s")
 if [ "$DRY_RUN" = true ]; then
-    BISYNC_ARGS+=("--dry-run")
-fi
-if [ ! -f "$bisync_track" ] || [ "$needs_resync" = true ]; then
-    info "No prior tracking state — establishing with --resync"
-    BISYNC_ARGS+=("--resync")
-else
-    info "Tracking state found — running incremental bisync"
+    sync_ARGS+=("--dry-run")
 fi
 
 if [ "$DRY_RUN" = true ]; then
-    info "DRY-RUN: rclone bisync ${BISYNC_ARGS[*]}"
+    info "DRY-RUN: rclone sync ${sync_ARGS[*]}"
 else
-    rclone bisync "${BISYNC_ARGS[@]}" 2>&1 || {
+    rclone sync "${sync_ARGS[@]}" 2>&1 || {
         job1_rc=$?
-        fail "Bisync failed (exit: $job1_rc)"
+        fail "sync failed (exit: $job1_rc)"
     }
 fi
 echo ""
@@ -155,8 +161,8 @@ echo "   Local:  $UPLOAD_LOCAL"
 echo "   Remote: $UPLOAD_REMOTE"
 echo ""
 
-if [ -z "$(ls -A "$UPLOAD_LOCAL" 2>/dev/null)" ]; then
-    info "Nothing to upload — local folder is empty"
+if [ ! -d "$UPLOAD_LOCAL" ] || [ -z "$(ls -A "$UPLOAD_LOCAL" 2>/dev/null)" ]; then
+    info "Nothing to upload — local folder is empty or does not exist"
 else
     MOVE_ARGS=("$UPLOAD_LOCAL" "$UPLOAD_REMOTE" $RCLONE_OPTS "--delete-empty-src-dirs" "-P" "--stats-one-line" "--stats" "5s")
     if [ "$DRY_RUN" = true ]; then
@@ -189,7 +195,7 @@ echo "╔═══════════════════════�
 echo "║                      SYNC COMPLETE                          ║"
 echo "╠══════════════════════════════════════════════════════════════╣"
 printf "║ Remote: %-52s ║\n" "$REMOTE"
-printf "║ Job 1 (bisync):  %-46s ║\n" "$result1"
+printf "║ Job 1 (sync):  %-46s ║\n" "$result1"
 printf "║ Job 2 (upload):  %-46s ║\n" "$result2"
 if [ "$DRY_RUN" = true ]; then
     printf "║ %-60s ║\n" "⚠ DRY-RUN — no files were actually transferred"
